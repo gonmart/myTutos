@@ -1,4 +1,4 @@
-Random App Name22436
+Random App Name17891
 =========================
 
 ## Overview
@@ -6,7 +6,7 @@ Random App Name22436
 
 ## License
 
-Random App Name22436 is released under the MIT license.  See the file [LICENSE](./LICENSE) for the full text.
+Random App Name17891 is released under the MIT license.  See the file [LICENSE](./LICENSE) for the full text.
 
 ##Documentation for SDK
 

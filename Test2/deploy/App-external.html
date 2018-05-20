@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Random App Name22436</title>
+    <title>This is my First App</title>
 
     <script type="text/javascript" src="https://rally1.rallydev.com/apps/2.1/sdk.js"></script>
 
     <script type="text/javascript">
         Rally.onReady(function () {
-                Ext.define("CustomApp",{extend:"Rally.app.App",componentCls:"app",launch:function(){console.log("THis is my new App"),console.log("and I'm like crazy running this")}});
+                Ext.define("CustomApp",{extend:"Rally.app.App",componentCls:"app",launch:function(){this._loadData()},_loadData:function(){Ext.create("Rally.data.wsapi.Store",{model:"User Story",autoLoad:!0,listeners:{load:function(t,a,e){this._loadGrid(t)},scope:this},fetch:["FormattedID","Name","ScheduleState"]})},_loadGrid:function(t){var a=Ext.create("Rally.ui.grid.Grid",{store:t,columnCfgs:["FormattedID","Name","ScheduleState"]});this.add(a)}});
 
             Rally.launchApp('CustomApp', {
-                name:"Random App Name22436",
+                name:"This is my First App",
                 parentRepos:"",
                 version:"0.1.1"
             });
