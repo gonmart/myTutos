@@ -1,9 +1,12 @@
 Ext.define('CustomApp', {
     extend: 'Rally.app.App',
     componentCls: 'app',
-    launch: function() {
-        //Everything starts HERE!
+    
+    myDefectStore: undefined,
+    myGrid: undefined,
 
+    //Everything starts HERE!
+    launch: function() {
         //Defining here the Top container for the Comboboxes
         this.pulldownContainer = Ext.create('Ext.container.Container', {
             id: 'pulldown-container-id',
@@ -20,12 +23,15 @@ Ext.define('CustomApp', {
     //Create Iteration ComboBox
     _loadIterations: function(){
         this.iterComboBox = Ext.create('Rally.ui.combobox.IterationComboBox', {
+            fieldLabel: 'Iteration',
+            labelAlign: 'right',
+            width: 400,
             listeners: {
-                ready: function(combobox){
+                ready: function(){
                     //this._loadData();
                     this._loadSeverities();
                 },
-                select: function(combobox) {
+                select: function() {
                     this._loadData();
                 },
                 scope: this
@@ -39,11 +45,13 @@ Ext.define('CustomApp', {
         this.severityComboBox = Ext.create('Rally.ui.combobox.FieldValueComboBox', {
             model: 'Defect',
             field: 'Severity',
+            fieldLabel: 'Severity',
+            labelAlign: 'right',
             listeners: {
-                ready: function(combobox) {
+                ready: function() {
                     this._loadData();
                 },
-                select: function(combobox) {
+                select: function() {
                     this._loadData();
                 },
                 scope: this
@@ -77,7 +85,7 @@ Ext.define('CustomApp', {
                 autoLoad: true,
                 filters: myFilters,
                 listeners: {
-                    load: function(defectStore, myData, success) {
+                    load: function(defectStore) {
                         if(!this.myGrid){
                             this._createGrid(defectStore);
                         }
