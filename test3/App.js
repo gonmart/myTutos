@@ -4,7 +4,9 @@ Ext.define('CustomApp', {
     launch: function() {
         //Everything starts HERE!
 
+        //Defining here the Top container for the Comboboxes
         this.pulldownContainer = Ext.create('Ext.container.Container', {
+            id: 'pulldown-container-id',
             layout: {
                 type: 'hbox',
                 align: 'stretch'
@@ -55,38 +57,49 @@ Ext.define('CustomApp', {
         var selectedIterRef = this.iterComboBox.getRecord().get("_ref");    
         var selectedSeverityValue = this.severityComboBox.getRecord().get("value");
 
-        var myStore = Ext.create('Rally.data.wsapi.Store', {
-            model: 'Defect',
-            autoLoad: true,
-            filters: [{
-                property: 'Iteration',
-                operation: '=',
-                value: selectedIterRef
-            },{
-                property: 'Severity',
-                operation: '=',
-                value: selectedSeverityValue
-            }],
-            listeners: {
-                load: function(myStore, myData, success) {
-                    this._loadGrid(myStore);
+        var myFilters = [{
+            property: 'Iteration',
+            operation: '=',
+            value: selectedIterRef
+        },{
+            property: 'Severity',
+            operation: '=',
+            value: selectedSeverityValue
+        }];
+
+        //if store exists, just load new data
+        if(this.defectStore){
+            this.defectStore.setFilter(myFilters);
+            this.defectStore.load();
+        } else {
+            this.defectStore = Ext.create('Rally.data.wsapi.Store', {
+                model: 'Defect',
+                autoLoad: true,
+                filters: myFilters,
+                listeners: {
+                    load: function(defectStore, myData, success) {
+                        if(!this.myGrid){
+                            this._createGrid(defectStore);
+                        }
+                    },
+                    scope: this 
                 },
-                scope: this 
-            },
-            fetch: ['FormattedID', 'Name', 'Severity', 'Iteration']
-        });
+                fetch: ['FormattedID', 'Name', 'Severity', 'Iteration']
+            });
+        }
+        
     },
 
 
     //Create and Show a Grid of given stories
-    _loadGrid: function(myStoryStore) {
-        var myGrid = Ext.create('Rally.ui.grid.Grid', {
-            store: myStoryStore,
+    _createGrid: function(myDefectStore) {
+        this.myGrid = Ext.create('Rally.ui.grid.Grid', {
+            store: myDefectStore,
             columnCfgs: [
                 'FormattedID', 'Name', 'Severity', 'Iteration'
             ]
         });        
-        this.add(myGrid); //Adding the Grid in Screen
+        this.add(this.myGrid); //Adding the Grid in Screen
     }
     
    
