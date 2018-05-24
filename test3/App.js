@@ -86,8 +86,7 @@ Ext.define('CustomApp', {
                 },
                 fetch: ['FormattedID', 'Name', 'Severity', 'Iteration']
             });
-        }
-        
+        } 
     },
 
 
@@ -102,5 +101,4 @@ Ext.define('CustomApp', {
         this.add(this.myGrid); //Adding the Grid in Screen
     }
     
-   
 });
