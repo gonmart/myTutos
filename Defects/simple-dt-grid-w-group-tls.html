@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Random App Name12837</title>
+
+  <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+  <script type="text/javascript" src="https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.js"></script>
+
+  <script type="text/javascript">
+    Rally.onReady(function () {
+      Ext.define('CustomApp', {
+        extend: 'Rally.app.TimeboxScopedApp',
+        componentCls: 'app',
+        scopeType: 'milestone',
+
+        onScopeChange: function (scope) {
+          Ext.create('Rally.data.wsapi.Store', {
+            model: 'userstory',
+            limit: Infinity,
+            autoLoad: true,
+            fetch: [
+              'FormattedID',
+              'Name',
+              'Feature',
+              'Project',
+              'ScheduleState'
+            ],
+            filters: [{
+                property: 'Milestones.ObjectID',
+                operator: '=',
+                value: scope.getRecord() ? scope.getRecord().get('ObjectID') : null
+              },
+              {
+                property: 'Children.ObjectID',
+                operator: '=',
+                value: null
+              }
+            ],
+            groupField: 'Project',
+            getGroupString: function (record) {
+              return record.data.Project ? record.data.Project.Name : 'None';
+            },
+            listeners: {
+              scope: this,
+              load: this._onLoad
+            },
+          });
+        },
+
+        _onLoad: function (store, records) {
+          var groups = store.getGroups();
+
+          _.each(groups, function (group) {
+            var list = _.pluck(group.children, 'raw');
+
+            group['new'] = _.chain(list)
+              .where({
+                ScheduleState: 'New'
+              })
+              .size()
+              .value();
+
+            group['defined'] = _.chain(list)
+              .where({
+                ScheduleState: 'Defined'
+              })
+              .size()
+              .value();
+
+            group['inprogress'] = _.chain(list)
+              .where({
+                ScheduleState: 'In-Progress'
+              })
+              .size()
+              .value();
+
+            group['completed'] = _.chain(list)
+              .where({
+                ScheduleState: 'Completed'
+              })
+              .size()
+              .value();
+
+            group['accepted'] = _.chain(list)
+              .where({
+                ScheduleState: 'Accepted'
+              })
+              .size()
+              .value();
+
+            group['total'] = list.length;
+          })
+
+          this._data = groups;
+          this._export && this._export.destroy();
+          this._export = Ext.create('Ext.container.Container', {
+            html: [
+              '<table id="dt-table" class="table table-bordered table-hover table-condensed">',
+              '<tfoot>',
+              '<th></th>',
+              '<th></th>',
+              '<th></th>',
+              '<th></th>',
+              '<th></th>',
+              '<th></th>',
+              '<th></th>',
+              '</tfoot>',
+              '</table>'
+            ].join('')
+          });
+          this._export.on('boxready', this._createDT, this);
+
+          this.add(this._export);
+        },
+
+        _createDT: function () {
+          this._dt = $('#dt-table').DataTable({
+            data: this._data,
+            dom: 'rt',
+            columns: [{
+                title: "Name",
+                data: "name",
+                defaultContent: ''
+              },
+              {
+                title: "New",
+                data: "new",
+                defaultContent: '',
+                className: 'sum'
+              },
+              {
+                title: "Defined",
+                data: "defined",
+                defaultContent: '',
+                className: 'sum'
+              },
+              {
+                title: "In-Progress",
+                data: "inprogress",
+                defaultContent: '',
+                className: 'sum'
+              },
+              {
+                title: "Completed",
+                data: "completed",
+                defaultContent: '',
+                className: 'sum'
+              },
+              {
+                title: "Accepted",
+                data: "accepted",
+                defaultContent: '',
+                className: 'sum'
+              },
+              {
+                title: "Total",
+                data: "total",
+                defaultContent: '',
+                className: 'sum'
+              }
+            ],
+            footerCallback: function (row, data, start, end, display) {
+              var api = this.api();
+
+              var column = api.column(0);
+              $(column.footer()).html('<strong>Total</strong>');
+
+              api.columns('.sum').every(function () {
+                var sum = this
+                  .data()
+                  .reduce(function (a, b) {
+                    return a + b;
+                  });
+
+                $(this.footer()).html('<strong>' + sum + '</strong>');
+              });
+            }
+          });
+        }
+      });
+
+      Rally.launchApp('CustomApp', {
+        name: "Feature Items by Milestone",
+        parentRepos: ""
+      });
+    });
+  </script>
+
+
+  <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.css"/>
+
+  <style type="text/css">
+    .app {
+      /* Add app styles here */
+    }
+  </style>
+</head>
+
+<body>
+</body>
+
+</html>

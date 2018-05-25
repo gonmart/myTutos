@@ -33,7 +33,7 @@ Ext.define('CustomApp', {
                 scope: this
             }
         });
-       
+        
         this.down('#pulldown-container').add(iterComboBox); 
     },
 
@@ -76,6 +76,8 @@ Ext.define('CustomApp', {
     _loadData: function() {
         var selectedIterRef = this.down('#iteration-combobox').getRecord().get("_ref");    
         var selectedSeverityValue = this.down('#severity-combobox').getRecord().get("value");
+
+        console.log("Iteration info: ", this.down('#iteration-combobox').getRecord());
 
         var myFilters = this._getFilters(selectedIterRef, selectedSeverityValue);
         
