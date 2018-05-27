@@ -5,6 +5,7 @@ Ext.define('CustomApp', {
     items: [
         {
             xtype: 'container',
+            Id: 'pulldown-container',
             itemId: 'pulldown-container',
             layout: {
                 type: 'hbox',
@@ -24,8 +25,10 @@ Ext.define('CustomApp', {
     _loadMilestones: function(){
         var mileCombobox = Ext.create('Rally.ui.combobox.MilestoneComboBox', {
             itemId: 'milestone-combobox',
+            hideLabel: false,
             fieldLabel: 'Milestone: ',
             labelAlign: 'right',
+            width: 300,
             listeners: {
                 ready: this._loadDefectSuites,
                 select: this._loadData,
@@ -53,6 +56,7 @@ Ext.define('CustomApp', {
             listeners: {
                 ready: this._loadData,
                 select: this._loadData,
+                afterrender: this._loadData,
                 scope: this
             }
         });
@@ -61,8 +65,14 @@ Ext.define('CustomApp', {
     },
 
 
-    _loadData: function(){
-        console.log('Loading data...');
+    _loadData: function() {
+        var selectedMilestone = this.down("#milestone-combobox").getRecord().get("_ref");
+        var selectedDS = this.down("#defectsuite-combobox").getValue();
+
+        console.log("Milestone:", selectedMilestone);
+        console.log("Defect Suite:", selectedDS);
+      
+
     },
 
 
