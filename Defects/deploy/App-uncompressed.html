@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Random App Name96364</title>
+    <title>Defects Grid</title>
 
     <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
     <script type="text/javascript" src="https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.js"></script>
@@ -11,16 +11,77 @@
                 Ext.define('CustomApp', {
     extend: 'Rally.app.App',
     componentCls: 'app',
-    launch: function() {
-        //Write app code here
+    
+    items: [
+        {
+            xtype: 'container',
+            itemId: 'pulldown-container',
+            layout: {
+                type: 'hbox',
+                align: 'stretch'
+            }
+        }
+    ],
 
-        //API Docs: https://help.rallydev.com/apps/2.1/doc/
-    }
+    myDefecfStore: undefined,
+    myGrid: undefined,
+
+    launch: function() {
+        this._loadMilestones();
+    },
+
+
+    _loadMilestones: function(){
+        var mileCombobox = Ext.create('Rally.ui.combobox.MilestoneComboBox', {
+            itemId: 'milestone-combobox',
+            fieldLabel: 'Milestone: ',
+            labelAlign: 'right',
+            listeners: {
+                ready: this._loadDefectSuites,
+                select: this._loadData,
+                scope: this
+            }
+        });        
+
+        this.down("#pulldown-container").add(mileCombobox);
+    },
+
+
+    _loadDefectSuites: function() {
+        var dsuiteCombobox = Ext.create ('Rally.ui.combobox.ArtifactSearchComboBox', {
+            itemId: 'defectsuite-combobox',
+            fieldLabel: 'Defect Suite: ',
+            labelAlign: 'right',
+            storeConfig: {
+                autoload: true, 
+                models: ['DefectSuite'],
+                sorters: {
+                    property: 'FormattedID',
+                    direction: 'DESC'
+                }
+            },
+            listeners: {
+                ready: this._loadData,
+                select: this._loadData,
+                scope: this
+            }
+        });
+
+        this.down('#pulldown-container').add(dsuiteCombobox);
+    },
+
+
+    _loadData: function(){
+        console.log('Loading data...');
+    },
+
+
+
 });
 
 
             Rally.launchApp('CustomApp', {
-                name:"Random App Name96364",
+                name:"Defects Grid",
                 parentRepos:"",
                 version:"0.1.1"
             });
