@@ -22,6 +22,7 @@ Ext.define('CustomApp', {
     },
 
 
+    //Load Milestones in Combobox
     _loadMilestones: function(){
         var mileCombobox = Ext.create('Rally.ui.combobox.MilestoneComboBox', {
             itemId: 'milestone-combobox',
@@ -40,6 +41,7 @@ Ext.define('CustomApp', {
     },
 
 
+    //Load Defect Suites in Combobox
     _loadDefectSuites: function() {
         var dsuiteCombobox = Ext.create ('Rally.ui.combobox.ArtifactSearchComboBox', {
             itemId: 'defectsuite-combobox',
@@ -64,17 +66,83 @@ Ext.define('CustomApp', {
         this.down('#pulldown-container').add(dsuiteCombobox);
     },
 
+    // Create the Filters
+    _getFilters: function(SelMilestone, SelDefectSuite){
 
-    _loadData: function() {
-        var selectedMilestone = this.down("#milestone-combobox").getRecord().get("_ref");
-        var selectedDS = this.down("#defectsuite-combobox").getValue();
+        var milestoneFilter = Ext.create('Rally.data.wsapi.Filter', {
+            property: 'Milestones',
+            operation: 'contains',
+            value: SelMilestone
+        });
 
-        console.log("Milestone:", selectedMilestone);
-        console.log("Defect Suite:", selectedDS);
-      
+        var defectSuiteFilter = Ext.create('Rally.data.wsapi.Filter', {
+            property: 'DefectSuites',
+            operation: 'contains',
+            value: SelDefectSuite
+        });
+
+        
+
+        if(_.isNull(SelDefectSuite)) {
+            return milestoneFilter;
+        } else {
+            return milestoneFilter.or(defectSuiteFilter);
+        }
 
     },
 
+
+
+    //Load Data
+    _loadData: function() {
+
+        var selectedMilestone = this.down("#milestone-combobox").getRecord().get("_ref");
+        var selectedDS = this.down("#defectsuite-combobox").getValue();
+
+        var myFilters = this._getFilters(selectedMilestone, selectedDS);
+
+        console.log("Filters: ", myFilters.toString());
+
+        if(this.cargoStore){            
+            this.cargoStore.setFilter(myFilters);
+            this.cargoStore.load();
+        } else {
+            this.cargoStore = Ext.create('Rally.data.wsapi.artifact.Store', {
+                models: ['UserStory','Defect'],
+                fetch: ['FormattedID', 'Name', 'ScheduleState','Milestones', 'DefectSuites'],
+                autoLoad: true,
+                filters: myFilters,
+                limit: Infinity,
+                listeners: {
+                    load: function(cargoStore) {
+                        if(!this.myGrid){
+                            this._createGrid(cargoStore);
+                        }
+                    },
+                    scope: this
+                },
+                context: {
+                    projectScopeDown: true
+                }
+            });
+            
+        }
+    },
+
+
+    //Create Grid
+    _createGrid: function(Cargo) {
+
+        this.myGrid = Ext.create('Rally.ui.grid.Grid',{
+            store: Cargo,
+            columnCfgs: [
+                'FormattedID','Name','ScheduleState','Milestones', 'DefectSuites'
+            ]
+        });
+
+        this.add(this.myGrid);
+
+    },
 
 
 });
