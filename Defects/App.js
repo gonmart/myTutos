@@ -71,17 +71,15 @@ Ext.define('CustomApp', {
 
         var milestoneFilter = Ext.create('Rally.data.wsapi.Filter', {
             property: 'Milestones',
-            operation: 'contains',
+            operator: '=',
             value: SelMilestone
         });
 
         var defectSuiteFilter = Ext.create('Rally.data.wsapi.Filter', {
             property: 'DefectSuites',
-            operation: 'contains',
+            operator: 'contains',
             value: SelDefectSuite
         });
-
-        
 
         if(_.isNull(SelDefectSuite)) {
             return milestoneFilter;
@@ -100,8 +98,6 @@ Ext.define('CustomApp', {
         var selectedDS = this.down("#defectsuite-combobox").getValue();
 
         var myFilters = this._getFilters(selectedMilestone, selectedDS);
-
-        console.log("Filters: ", myFilters.toString());
 
         if(this.cargoStore){            
             this.cargoStore.setFilter(myFilters);
@@ -135,6 +131,8 @@ Ext.define('CustomApp', {
 
         this.myGrid = Ext.create('Rally.ui.grid.Grid',{
             store: Cargo,
+            enableRanking: true,
+            defaultSortToRank: true,
             columnCfgs: [
                 'FormattedID','Name','ScheduleState','Milestones', 'DefectSuites'
             ]
