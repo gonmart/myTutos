@@ -2,7 +2,7 @@ Ext.define('CustomApp', {
     extend: 'Rally.app.TimeboxScopedApp',
     componentCls: 'app',
     scopeType: 'milestone',
-    
+
     comboboxConfig: {
         hideLabel: false,
         fieldLabel: 'Milestone',
@@ -14,13 +14,13 @@ Ext.define('CustomApp', {
     myGrid: undefined,
 
     //launch function
-    onScopeChange: function(scope) {
+    onScopeChange: function (scope) {
         this._myStore(scope);
     },
 
     //Custom function to define filters
-    _myFilters: function(scope) {
-        
+    _myFilters: function (scope) {
+
         var milestoneFilter = Ext.create('Rally.data.wsapi.Filter', {
             property: 'Milestones.ObjectID',
             operator: 'contains',
@@ -34,10 +34,10 @@ Ext.define('CustomApp', {
 
 
     //Custom function to define the Store
-    _myStore: function(scope) {
-    
+    _myStore: function (scope) {
+
         var myFilters = this._myFilters(scope);
-        var myGroupSelection = 'Project';
+        var myGroupSelection = 'Priority';
         var myModel = 'defect';
         var myFetch = [
             'FormattedID',
@@ -50,26 +50,26 @@ Ext.define('CustomApp', {
             'Milestones'
         ];
 
-        if(this.myStore){
+        if (this.myStore) {
             this.myStore.setFilter(myFilters);
             this.myStore.load();
-        }else{
-            this.myStore = Ext.create('Rally.data.wsapi.Store',{
+        } else {
+            this.myStore = Ext.create('Rally.data.wsapi.Store', {
                 model: myModel,
-                autoLoad: true, 
+                autoLoad: true,
                 limit: Infinity,
                 filters: myFilters,
                 groupField: myGroupSelection,
-                getGroupString: function(record) {
+                /*getGroupString: function(record) {
                     return record.data.Project ? record.data.Project.Name : 'None';
-                },
+                },*/
                 context: {
                     project: null,
                     projectScopeDown: true
                 },
                 fetch: myFetch,
                 listeners: {
-                    scope: this, 
+                    scope: this,
                     load: this._onLoadLogic
                 },
                 sorters: [{
@@ -82,48 +82,73 @@ Ext.define('CustomApp', {
     },
 
     //Custom function to define and work in business logic
-    _onLoadLogic: function(store, records) {
-        
+    _onLoadLogic: function (store, records) {
+
         var groups = store.getGroups();
 
-        _.forEach(groups, function(group){
-            
+        _.forEach(groups, function (group) {
+
             var list = _.pluck(group.children, 'raw');
 
             group['Submitted'] = _.chain(list)
-                .where({state: 'Submitted'})
+                .where({
+                    State: 'Submitted'
+                })
                 .size()
                 .value();
-            
+
             group['Open'] = _.chain(list)
-                .where({state: 'Open'})
+                .where({
+                    State: 'Open'
+                })
                 .size()
                 .value();
-            
+
             group['Resolved'] = _.chain(list)
-                .where({state: 'Resolved'})
+                .where({
+                    State: 'Resolved'
+                })
                 .size()
                 .value();
 
             group['Rejected'] = _.chain(list)
-                .where({state: 'Rejected'})
+                .where({
+                    State: 'Rejected'
+                })
                 .size()
-                .value();               
-                
+                .value();
+
             group['Closed'] = _.chain(list)
-                .where({state: 'Closed'})
+                .where({
+                    State: 'Closed'
+                })
                 .size()
                 .value();
 
             group['total'] = list.length;
         })
-        
+
         this._data = groups;
+
         this._export && this._export.destroy(); //make sure _export exist, if so, then destroy it. REplacing the if.
 
         this._export = Ext.create('Ext.container.Container', {
+
+
+            /*
+            cell-border
+            display
+            display compact
+            hover
+            order-column
+            row-border
+            table table-striped table-bordered
+            ui celled table
+            */
+
+
             html: [
-                '<table id="dt-table" class="table table-bordered table-hover table-condensed">',
+                '<table id="dt-table" class="display compact" style="width:50%">',
                 '<tfoot>',
                 '<th></th>',
                 '<th></th>',
@@ -134,7 +159,7 @@ Ext.define('CustomApp', {
                 '<th></th>',
                 '</tfoot>',
                 '</table>'
-              ].join('')
+            ].join('')
         });
         this._export.on('boxready', this._myGrid, this);
         this.add(this._export);
@@ -142,7 +167,105 @@ Ext.define('CustomApp', {
     },
 
     //custom function to define and create the visualization
-    _myGrid: function() {
+    _myGrid: function () {
+
+        var myColumns = [{
+                title: "Name",
+                data: "name",
+                defaultContent: '',
+                className: ''
+            },
+            {
+                title: "Submitted",
+                data: "Submitted",
+                defaultContent: '',
+                className: 'dt-center'
+            },
+            {
+                title: "Open",
+                data: "Open",
+                defaultContent: '',
+                className: 'dt-center'
+            },
+            {
+                title: "Resolved",
+                data: "Resolved",
+                defaultContent: '',
+                className: 'dt-center'
+            },
+            {
+                title: "Rejected",
+                data: "Rejected",
+                defaultContent: '',
+                className: 'dt-center'
+            },
+            {
+                title: "Closed",
+                data: "Closed",
+                defaultContent: '',
+                className: 'dt-center'
+            },
+            {
+                title: "Total",
+                data: "total",
+                defaultContent: '',
+                className: 'dt-center'
+            }
+        ];
+
+        $(document).ready(function() {
+            this._dt = $('#dt-table').DataTable({
+                data: this._data,
+                dom: 'rt',
+                columns: myColumns,
+    
+                paging: false,
+                ordering: false,
+                info: false, 
+    
+                //scrollY: "300px",
+                //scrollCollapse: true,
+                //scrollX: true,
+    
+                columnDefs: [{
+                    className: "dt-center",
+                    targets: "_all"
+                }],
+    
+    
+                footerCallback: function (row, data, start, end, display) {
+                    var api = this.api();
+                    var column = api.column(0);
+    
+                    //display the footer only when data is available
+                    if(api.data().count() > 0){
+                        $(column.footer()).html('<strong>Total</strong>');
+                    }
+                    
+                    api.columns([1,2,3,4,5,6]).every(function () {
+                        
+                        //display totals only when data is available
+                        if(this.data().count() > 0) {
+                            var sum = this
+                                .data()
+                                .reduce(function (a, b) {
+                                    return a + b;
+                                });
+    
+                            $(this.footer()).html('<strong>' + sum + '</strong>');
+                        }else {
+                            console.log("EMPTY");
+                        }
+                        
+                    });
+                    
+                }
+            });
+        });
+
+      
+
+
 
     }
 

@@ -135,6 +135,9 @@ Ext.define('CustomApp', {
             defaultSortToRank: true,
             columnCfgs: [
                 'FormattedID','Name','ScheduleState','Milestones', 'DefectSuites'
+            ],
+            plugins: [
+                'rallyprint'
             ]
         });
 
