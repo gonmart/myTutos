@@ -82,8 +82,8 @@ Ext.define('CustomApp', {
     },
 
     //Custom function to define and work in business logic
-    _onLoadLogic: function (store, records) {
-
+    _onLoadLogic: function (store) {
+        
         var groups = store.getGroups();
 
         _.forEach(groups, function (group) {
@@ -128,27 +128,14 @@ Ext.define('CustomApp', {
             group['total'] = list.length;
         })
 
+        
         this._data = groups;
 
         this._export && this._export.destroy(); //make sure _export exist, if so, then destroy it. REplacing the if.
 
         this._export = Ext.create('Ext.container.Container', {
-
-
-            /*
-            cell-border
-            display
-            display compact
-            hover
-            order-column
-            row-border
-            table table-striped table-bordered
-            ui celled table
-            */
-
-
             html: [
-                '<table id="dt-table" class="display compact" style="width:50%">',
+                '<table id="dt-table" class="table table-bordered table-hover table-condensed" style="width:50%">',
                 '<tfoot>',
                 '<th></th>',
                 '<th></th>',
@@ -179,37 +166,37 @@ Ext.define('CustomApp', {
                 title: "Submitted",
                 data: "Submitted",
                 defaultContent: '',
-                className: 'dt-center'
+                className: ''
             },
             {
                 title: "Open",
                 data: "Open",
                 defaultContent: '',
-                className: 'dt-center'
+                className: ''
             },
             {
                 title: "Resolved",
                 data: "Resolved",
                 defaultContent: '',
-                className: 'dt-center'
+                className: ''
             },
             {
                 title: "Rejected",
                 data: "Rejected",
                 defaultContent: '',
-                className: 'dt-center'
+                className: ''
             },
             {
                 title: "Closed",
                 data: "Closed",
                 defaultContent: '',
-                className: 'dt-center'
+                className: ''
             },
             {
                 title: "Total",
                 data: "total",
                 defaultContent: '',
-                className: 'dt-center'
+                className: ''
             }
         ];
 
@@ -227,16 +214,11 @@ Ext.define('CustomApp', {
                 //scrollCollapse: true,
                 //scrollX: true,
     
-                columnDefs: [{
-                    className: "dt-center",
-                    targets: "_all"
-                }],
-    
-    
-                footerCallback: function (row, data, start, end, display) {
+                footerCallback: function () {
                     var api = this.api();
                     var column = api.column(0);
     
+                    console.log("What is api", this.api());
                     //display the footer only when data is available
                     if(api.data().count() > 0){
                         $(column.footer()).html('<strong>Total</strong>');
@@ -244,7 +226,7 @@ Ext.define('CustomApp', {
                     
                     api.columns([1,2,3,4,5,6]).every(function () {
                         
-                        //display totals only when data is available
+                        //display totals only when data is available                        
                         if(this.data().count() > 0) {
                             var sum = this
                                 .data()

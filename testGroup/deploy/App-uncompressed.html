@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Testing Grouping</title>
+    <title>Grouping Defects</title>
 
     <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+    <script type="text/javascript" src="http://code.jquery.com/jquery-3.3.1.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.js"></script>
 
     <script type="text/javascript">
         Rally.onReady(function () {
@@ -92,7 +94,7 @@
 
     //Custom function to define and work in business logic
     _onLoadLogic: function (store) {
-
+        
         var groups = store.getGroups();
 
         _.forEach(groups, function (group) {
@@ -135,27 +137,16 @@
                 .value();
 
             group['total'] = list.length;
-        }),
+        })
 
+        console.log("What is groups", groups);
         this._data = groups;
+
         this._export && this._export.destroy(); //make sure _export exist, if so, then destroy it. REplacing the if.
+
         this._export = Ext.create('Ext.container.Container', {
-
-
-            /*
-            cell-border
-            display
-            display compact
-            hover
-            order-column
-            row-border
-            table table-striped table-bordered
-            ui celled table
-            */
-
-
             html: [
-                '<table id="dt-table" class="display compact" style="width:50%">',
+                '<table id="dt-table" class="table table-bordered table-hover table-condensed" style="width:50%">',
                 '<tfoot>',
                 '<th></th>',
                 '<th></th>',
@@ -186,85 +177,87 @@
                 title: "Submitted",
                 data: "Submitted",
                 defaultContent: '',
-                className: 'dt-center'
+                className: ''
             },
             {
                 title: "Open",
                 data: "Open",
                 defaultContent: '',
-                className: 'dt-center'
+                className: ''
             },
             {
                 title: "Resolved",
                 data: "Resolved",
                 defaultContent: '',
-                className: 'dt-center'
+                className: ''
             },
             {
                 title: "Rejected",
                 data: "Rejected",
                 defaultContent: '',
-                className: 'dt-center'
+                className: ''
             },
             {
                 title: "Closed",
                 data: "Closed",
                 defaultContent: '',
-                className: 'dt-center'
+                className: ''
             },
             {
                 title: "Total",
                 data: "total",
                 defaultContent: '',
-                className: 'dt-center'
+                className: ''
             }
         ];
 
-        this._dt = $('#dt-table').DataTable({
-            data: this._data,
-            dom: 'rt',
-            columns: myColumns,
-
-            paging: false,
-            ordering: false,
-            info: false, 
-
-            //scrollY: "300px",
-            //scrollCollapse: true,
-            //scrollX: true,
-
-            columnDefs: [{
-                className: "dt-center",
-                targets: "_all"
-            }],
-
-
-            footerCallback: function (row, data, start, end, display) {
-                var api = this.api();
-                var column = api.column(0);
-
-                //display the footer only when data is available
-                if(api.data().count() > 0){
-                    $(column.footer()).html('<strong>Total</strong>');
-                }
-                
-                api.columns([1,2,3,4,5,6]).every(function () {
-                    
-                    //display totals only when data is available
-                    if(this.data().count() > 0) {
-                        var sum = this
-                            .data()
-                            .reduce(function (a, b) {
-                                return a + b;
-                            });
-
-                        $(this.footer()).html('<strong>' + sum + '</strong>');
+        $(document).ready(function() {
+            this._dt = $('#dt-table').DataTable({
+                data: this._data,
+                dom: 'rt',
+                columns: myColumns,
+    
+                paging: false,
+                ordering: false,
+                info: false, 
+    
+                //scrollY: "300px",
+                //scrollCollapse: true,
+                //scrollX: true,
+    
+                footerCallback: function () {
+                    var api = this.api();
+                    var column = api.column(0);
+    
+                    console.log("What is api", api);
+                    console.log("What is column", column);
+                    //display the footer only when data is available
+                    if(api.data().count() > 0){
+                        $(column.footer()).html('<strong>Total</strong>');
                     }
                     
-                });
-                
-            }
+                    api.columns([1,2,3,4,5,6]).every(function () {
+                        
+                        //display totals only when data is available                        
+                        if(this.data().count() > 0) {
+                            var sum = this
+                                .data()
+                                .reduce(function (a, b) {
+                                    return a + b;
+                                });
+    
+                            $(this.footer()).html('<strong>' + sum + '</strong>');
+                        }else {
+                            console.log("EMPTY");
+                        }
+                        
+                    });
+                    
+                }
+            });
         });
+
+      
 
 
 
@@ -274,7 +267,7 @@
 });
 
             Rally.launchApp('CustomApp', {
-                name:"Testing Grouping",
+                name:"Grouping Defects",
                 parentRepos:"",
                 version:"0.1.1"
             });
@@ -283,6 +276,7 @@
     </script>
 
 
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.css"/>
 
     <style type="text/css">
         .app {

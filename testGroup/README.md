@@ -1,12 +1,12 @@
-Random App Name20484
+Random App Name38122
 =========================
 
 ## Overview
-This app is to test the grouping code
+
 
 ## License
 
-Testing Grouping is released under the MIT license.  See the file [LICENSE](./LICENSE) for the full text.
+Random App Name38122 is released under the MIT license.  See the file [LICENSE](./LICENSE) for the full text.
 
 ##Documentation for SDK
 

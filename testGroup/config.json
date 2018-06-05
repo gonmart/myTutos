@@ -1,12 +1,15 @@
 {
-    "name": "Testing Grouping",
+    "name": "Grouping Defects",
     "className": "CustomApp",
     "server": "https://rally1.rallydev.com",
     "sdk": "2.1",
     "javascript": [
-        "App.js"
+        "App.js",
+        "http://code.jquery.com/jquery-3.3.1.js",
+        "https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.js"
     ],
     "css": [
-        "app.css"
+        "app.css",
+        "https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.css"
     ]
 }
