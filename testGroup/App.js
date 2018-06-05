@@ -131,6 +131,8 @@ Ext.define('CustomApp', {
         
         this._data = groups;
 
+        console.log("What is this?", this._data);
+
         this._export && this._export.destroy(); //make sure _export exist, if so, then destroy it. REplacing the if.
 
         this._export = Ext.create('Ext.container.Container', {
@@ -166,41 +168,41 @@ Ext.define('CustomApp', {
                 title: "Submitted",
                 data: "Submitted",
                 defaultContent: '',
-                className: ''
+                className: 'dt-center'
             },
             {
                 title: "Open",
                 data: "Open",
                 defaultContent: '',
-                className: ''
+                className: 'dt-center'
             },
             {
                 title: "Resolved",
                 data: "Resolved",
                 defaultContent: '',
-                className: ''
+                className: 'dt-center'
             },
             {
                 title: "Rejected",
                 data: "Rejected",
                 defaultContent: '',
-                className: ''
+                className: 'dt-center'
             },
             {
                 title: "Closed",
                 data: "Closed",
                 defaultContent: '',
-                className: ''
+                className: 'dt-center'
             },
             {
                 title: "Total",
                 data: "total",
                 defaultContent: '',
-                className: ''
+                className: 'dt-center'
             }
         ];
 
-        $(document).ready(function() {
+        
             this._dt = $('#dt-table').DataTable({
                 data: this._data,
                 dom: 'rt',
@@ -218,7 +220,7 @@ Ext.define('CustomApp', {
                     var api = this.api();
                     var column = api.column(0);
     
-                    console.log("What is api", this.api());
+                  
                     //display the footer only when data is available
                     if(api.data().count() > 0){
                         $(column.footer()).html('<strong>Total</strong>');
@@ -235,15 +237,13 @@ Ext.define('CustomApp', {
                                 });
     
                             $(this.footer()).html('<strong>' + sum + '</strong>');
-                        }else {
-                            console.log("EMPTY");
                         }
                         
                     });
                     
                 }
             });
-        });
+   
 
       
 

@@ -6,6 +6,7 @@
     <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
     <script type="text/javascript" src="http://code.jquery.com/jquery-3.3.1.js"></script>
     <script type="text/javascript" src="https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/v/dt/jq-3.2.1/dt-1.10.16/b-1.5.1/b-html5-1.5.1/datatables.min.js"></script>
 
     <script type="text/javascript">
         Rally.onReady(function () {
@@ -139,8 +140,10 @@
             group['total'] = list.length;
         })
 
-        console.log("What is groups", groups);
+        
         this._data = groups;
+
+        console.log("What is this?", this._data);
 
         this._export && this._export.destroy(); //make sure _export exist, if so, then destroy it. REplacing the if.
 
@@ -177,41 +180,41 @@
                 title: "Submitted",
                 data: "Submitted",
                 defaultContent: '',
-                className: ''
+                className: 'dt-center'
             },
             {
                 title: "Open",
                 data: "Open",
                 defaultContent: '',
-                className: ''
+                className: 'dt-center'
             },
             {
                 title: "Resolved",
                 data: "Resolved",
                 defaultContent: '',
-                className: ''
+                className: 'dt-center'
             },
             {
                 title: "Rejected",
                 data: "Rejected",
                 defaultContent: '',
-                className: ''
+                className: 'dt-center'
             },
             {
                 title: "Closed",
                 data: "Closed",
                 defaultContent: '',
-                className: ''
+                className: 'dt-center'
             },
             {
                 title: "Total",
                 data: "total",
                 defaultContent: '',
-                className: ''
+                className: 'dt-center'
             }
         ];
 
-        $(document).ready(function() {
+        
             this._dt = $('#dt-table').DataTable({
                 data: this._data,
                 dom: 'rt',
@@ -229,8 +232,7 @@
                     var api = this.api();
                     var column = api.column(0);
     
-                    console.log("What is api", api);
-                    console.log("What is column", column);
+                  
                     //display the footer only when data is available
                     if(api.data().count() > 0){
                         $(column.footer()).html('<strong>Total</strong>');
@@ -247,15 +249,13 @@
                                 });
     
                             $(this.footer()).html('<strong>' + sum + '</strong>');
-                        }else {
-                            console.log("EMPTY");
                         }
                         
                     });
                     
                 }
             });
-        });
+   
 
       
 
@@ -277,6 +277,7 @@
 
 
     <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.css"/>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/v/dt/jq-3.2.1/dt-1.10.16/b-1.5.1/b-html5-1.5.1/datatables.min.css"/>
 
     <style type="text/css">
         .app {
