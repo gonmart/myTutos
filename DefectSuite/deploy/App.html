@@ -1,25 +1,28 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Defects Grid</title>
+    <title>DefectSuites</title>
 
     <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+    <script type="text/javascript" src="http://code.jquery.com/jquery-3.3.1.js"></script>
     <script type="text/javascript" src="https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/v/dt/jq-3.2.1/dt-1.10.16/b-1.5.1/b-html5-1.5.1/datatables.min.js"></script>
 
     <script type="text/javascript">
         Rally.onReady(function () {
-                Ext.define("CustomApp",{extend:"Rally.app.App",componentCls:"app",items:[{xtype:"container",Id:"pulldown-container",itemId:"pulldown-container",layout:{type:"hbox",align:"stretch"}}],myDefecfStore:void 0,myGrid:void 0,launch:function(){this._loadDefectSuites()},_loadDefectSuites:function(){var t=Ext.create("Rally.ui.combobox.ArtifactSearchComboBox",{itemId:"defectsuite-combobox",fieldLabel:"Defect Suite: ",labelAlign:"right",storeConfig:{autoload:!0,models:["DefectSuite"],sorters:{property:"FormattedID",direction:"DESC"}},listeners:{ready:this._loadData,select:this._loadData,afterrender:this._loadData,scope:this}});this.down("#pulldown-container").add(t)},_getFilters:function(t){var e=Ext.create("Rally.data.wsapi.Filter",{property:"DefectSuites",operator:"contains",value:t});return _.isNull(t)?null:e},_loadData:function(){var t=this.down("#defectsuite-combobox").getValue(),e=this._getFilters(t);this.cargoStore?(this.cargoStore.setFilter(e),this.cargoStore.load()):this.cargoStore=Ext.create("Rally.data.wsapi.artifact.Store",{models:["Defect"],fetch:["FormattedID","Name","ScheduleState","Milestones","DefectSuites"],autoLoad:!0,filters:e,limit:1/0,listeners:{load:function(t){this.myGrid||this._createGrid(t)},scope:this},context:{projectScopeDown:!0}})},_createGrid:function(t){this.myGrid=Ext.create("Rally.ui.grid.Grid",{store:t,enableRanking:!0,defaultSortToRank:!0,columnCfgs:["FormattedID","Name","ScheduleState","Milestones","DefectSuites"],plugins:["rallyprint"]}),this.add(this.myGrid)}});
+                Ext.define("CustomApp",{extend:"Rally.app.App",componentCls:"app",items:[{xtype:"container",Id:"pulldown-container",itemId:"pulldown-container",layout:{type:"hbox",align:"stretch"}}],myDefecfStore:void 0,myGrid:void 0,launch:function(){this._loadDefectSuites()},_loadDefectSuites:function(){var t=Ext.create("Rally.ui.combobox.ArtifactSearchComboBox",{itemId:"defectsuite-combobox",fieldLabel:"Defect Suite: ",labelAlign:"right",storeConfig:{autoload:!0,models:["DefectSuite"],sorters:{property:"FormattedID",direction:"DESC"}},listeners:{ready:this._loadData,select:this._loadData,afterrender:this._loadData,scope:this}});this.down("#pulldown-container").add(t)},_getFilters:function(t){return Ext.create("Rally.data.wsapi.Filter",{property:"DefectSuites",operator:"contains",value:t})},_loadData:function(){var t=this.down("#defectsuite-combobox").getValue(),e=this._getFilters(t);this.cargoStore?(this.cargoStore.setFilter(e),this.cargoStore.load()):this.cargoStore=Ext.create("Rally.data.wsapi.artifact.Store",{models:["Defect"],fetch:["FormattedID","Name","ScheduleState","State","Milestones","Project","Blocked","DefectSuites"],autoLoad:!0,filters:e,limit:1/0,listeners:{load:function(t){this.myGrid||this._createGrid(t)},scope:this},context:{projectScopeDown:!0}})},_createGrid:function(t){this.myGrid=Ext.create("Rally.ui.grid.Grid",{store:t,enableRanking:!0,defaultSortToRank:!0,columnCfgs:["FormattedID","Name","ScheduleState","State","Milestone","Project","Blocked"],plugins:["rallyprint"]}),this.add(this.myGrid)}});
 
             Rally.launchApp('CustomApp', {
-                name:"Defects Grid",
+                name:"DefectSuites",
                 parentRepos:"",
-                version:""
+                version:"0.1.1"
             });
 
         });
     </script>
 
     <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.css"/>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/v/dt/jq-3.2.1/dt-1.10.16/b-1.5.1/b-html5-1.5.1/datatables.min.css"/>
 
     <style type="text/css">
         

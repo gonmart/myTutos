@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Defects Grid</title>
+    <title>DefectSuites</title>
 
     <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+    <script type="text/javascript" src="http://code.jquery.com/jquery-3.3.1.js"></script>
     <script type="text/javascript" src="https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/v/dt/jq-3.2.1/dt-1.10.16/b-1.5.1/b-html5-1.5.1/datatables.min.js"></script>
 
     <script type="text/javascript">
         Rally.onReady(function () {
@@ -65,11 +67,7 @@
             value: SelDefectSuite
         });
 
-        if(_.isNull(SelDefectSuite)) {
-            return null;
-        } else {
-            return defectSuiteFilter;
-        }
+        return defectSuiteFilter;
 
     },
 
@@ -77,7 +75,6 @@
     _loadData: function() {
 
         var selectedDS = this.down("#defectsuite-combobox").getValue();
-
         var myFilters = this._getFilters(selectedDS);
 
         if(this.cargoStore){            
@@ -86,7 +83,7 @@
         } else {
             this.cargoStore = Ext.create('Rally.data.wsapi.artifact.Store', {
                 models: ['Defect'],
-                fetch: ['FormattedID', 'Name', 'ScheduleState','Milestones', 'DefectSuites'],
+                fetch: ['FormattedID', 'Name', 'ScheduleState','State','Milestones', 'Project','Blocked','DefectSuites'],
                 autoLoad: true,
                 filters: myFilters,
                 limit: Infinity,
@@ -115,7 +112,7 @@
             enableRanking: true,
             defaultSortToRank: true,
             columnCfgs: [
-                'FormattedID','Name','ScheduleState','Milestones', 'DefectSuites'
+                'FormattedID','Name','ScheduleState','State','Milestone','Project','Blocked'
             ],
             plugins: [
                 'rallyprint'
@@ -131,9 +128,9 @@
 
 
             Rally.launchApp('CustomApp', {
-                name:"Defects Grid",
+                name:"DefectSuites",
                 parentRepos:"",
-                version:""
+                version:"0.1.1"
             });
 
         });
@@ -141,6 +138,7 @@
 
 
     <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/t/bs-3.3.6/jq-2.2.0,jszip-2.5.0,dt-1.10.11,b-1.1.2,b-flash-1.1.2,b-html5-1.1.2/datatables.min.css"/>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/v/dt/jq-3.2.1/dt-1.10.16/b-1.5.1/b-html5-1.5.1/datatables.min.css"/>
 
     <style type="text/css">
         .app {

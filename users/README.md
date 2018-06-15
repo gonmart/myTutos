@@ -1,4 +1,4 @@
-DefectSuites
+users
 =========================
 
 ## Overview
@@ -6,7 +6,7 @@ DefectSuites
 
 ## License
 
-DefectSuites is released under the MIT license.  See the file [LICENSE](./LICENSE) for the full text.
+users is released under the MIT license.  See the file [LICENSE](./LICENSE) for the full text.
 
 ##Documentation for SDK
 
