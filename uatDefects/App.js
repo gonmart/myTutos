@@ -1,13 +1,4 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>users</title>
-
-    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
-
-    <script type="text/javascript">
-        Rally.onReady(function () {
-                Ext.define('CustomApp', {
+Ext.define('CustomApp', {
     extend: 'Rally.app.App',
     componentCls: 'app',
 
@@ -22,7 +13,7 @@
         }
     ],
 
-    userStore: undefined,
+    defectStore: undefined,
     myGrid: undefined,
 
     launch: function() {
@@ -39,7 +30,7 @@
             model: 'User',
             field: 'Role',
             listeners: {
-                select: this._onRoleSelected,                
+                select: this._onRoleSelectedDefects,
                 scope: this
             }
         });
@@ -50,7 +41,7 @@
 
     _getFilters: function (roleSelected) {
         var roleFilter = Ext.create('Rally.data.wsapi.Filter', {
-            property: 'Role',
+            property: 'SubmittedBy.Role',
             operation: '=',
             value: roleSelected
         });
@@ -59,64 +50,42 @@
     },
 
 
-    _onRoleSelected: function () {
+    _onRoleSelectedDefects: function () {
 
         var selectedRole = this.down('#roles-combobox').getRecord().get("value");    
         var myFilters = this._getFilters(selectedRole);
 
-        if(this.userStore){
-            this.userStore.setFilter(myFilters);
-            this.userStore.load();
+        if(this.defectStore){
+            this.defectStore.setFilter(myFilters);
+            this.defectStore.load();
         } else {
-            this.userStore = Ext.create('Rally.data.wsapi.Store', {
-                model: 'User',
+            this.defectStore = Ext.create('Rally.data.wsapi.Store', {
+                model: 'Defect',
                 autoLoad: true,
                 limit: Infinity,
                 filters: myFilters,
                 listeners: {
-                    load: function(userStore) {
+                    load: function(defectStore) {
                         if(!this.myGrid){
-                            this._createGrid(userStore);
+                            this._createDefectsGrid(defectStore);
                         }
                     },
                     scope: this
                 },
-                fetch: ['UserName','Role'],
+                fetch: ['FormattedID','Name','SubmittedBy','State','Priority','Severity','Environment','Project','Iteration'],
             });   
         }
 
     },
 
-    _createGrid: function(myUserStore) {
+    _createDefectsGrid: function(myUserStore) {
         this.myGrid = Ext.create('Rally.ui.grid.Grid', {
             store: myUserStore,
             columnCfgs: [
-                'UserName','Role'
+                'FormattedID','Name','SubmittedBy','State','Priority','Severity','Environment','Project','Iteration'
             ]
         });        
         this.add(this.myGrid); 
-    }
+    },
+
 });
-
-
-            Rally.launchApp('CustomApp', {
-                name:"users",
-                parentRepos:"",
-                version:"0.1.1"
-            });
-
-        });
-    </script>
-
-
-
-    <style type="text/css">
-        .app {
-  /* Add app styles here */
-}
-
-    </style>
-</head>
-<body>
-</body>
-</html>

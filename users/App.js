@@ -30,7 +30,7 @@ Ext.define('CustomApp', {
             model: 'User',
             field: 'Role',
             listeners: {
-                select: this._onRoleSelected,
+                select: this._onRoleSelected,                
                 scope: this
             }
         });
@@ -87,5 +87,4 @@ Ext.define('CustomApp', {
         });        
         this.add(this.myGrid); 
     }
-
 });

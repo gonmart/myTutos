@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>uatDefects</title>
+
+    <script type="text/javascript" src="https://rally1.rallydev.com/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+                Ext.define("CustomApp",{extend:"Rally.app.App",componentCls:"app",items:[{xtype:"container",itemId:"pulldown-container",layout:{type:"hbox",align:"stretch"}}],defectStore:void 0,myGrid:void 0,launch:function(){this._loadDropdowns()},_loadDropdowns:function(){var e=Ext.create("Rally.ui.combobox.FieldValueComboBox",{itemId:"roles-combobox",fieldLabel:"Role",labelAlign:"right",model:"User",field:"Role",listeners:{select:this._onRoleSelectedDefects,scope:this}});this.down("#pulldown-container").add(e)},_getFilters:function(e){return Ext.create("Rally.data.wsapi.Filter",{property:"SubmittedBy.Role",operation:"=",value:e})},_onRoleSelectedDefects:function(){var e=this.down("#roles-combobox").getRecord().get("value"),t=this._getFilters(e);this.defectStore?(this.defectStore.setFilter(t),this.defectStore.load()):this.defectStore=Ext.create("Rally.data.wsapi.Store",{model:"Defect",autoLoad:!0,limit:1/0,filters:t,listeners:{load:function(e){this.myGrid||this._createDefectsGrid(e)},scope:this},fetch:["FormattedID","Name","SubmittedBy","State","Priority","Severity","Environment","Project","Iteration"]})},_createDefectsGrid:function(e){this.myGrid=Ext.create("Rally.ui.grid.Grid",{store:e,columnCfgs:["FormattedID","Name","SubmittedBy","State","Priority","Severity","Environment","Project","Iteration"]}),this.add(this.myGrid)}});
+
+            Rally.launchApp('CustomApp', {
+                name:"uatDefects",
+                parentRepos:"",
+                version:"0.1.1"
+            });
+
+        });
+    </script>
+
+
+    <style type="text/css">
+        
+    </style>
+</head>
+<body>
+</body>
+</html>
