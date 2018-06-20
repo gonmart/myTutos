@@ -22,7 +22,6 @@ Ext.define('CustomApp', {
 
 
     _loadDropdowns: function() {
-
         var usersComboBox = Ext.create('Rally.ui.combobox.FieldValueComboBox', {
             itemId: 'roles-combobox',
             fieldLabel: 'Role',
@@ -33,8 +32,7 @@ Ext.define('CustomApp', {
                 select: this._onRoleSelectedDefects,
                 scope: this
             }
-        });
-     
+        }); 
         this.down('#pulldown-container').add(usersComboBox);
     },
 
@@ -45,13 +43,11 @@ Ext.define('CustomApp', {
             operation: '=',
             value: roleSelected
         });
-
         return roleFilter;
     },
 
 
     _onRoleSelectedDefects: function () {
-
         var selectedRole = this.down('#roles-combobox').getRecord().get("value");    
         var myFilters = this._getFilters(selectedRole);
 
@@ -75,9 +71,9 @@ Ext.define('CustomApp', {
                 fetch: ['FormattedID','Name','SubmittedBy','State','Priority','Severity','Environment','Project','Iteration'],
             });   
         }
-
     },
 
+    
     _createDefectsGrid: function(myUserStore) {
         this.myGrid = Ext.create('Rally.ui.grid.Grid', {
             store: myUserStore,
