@@ -71,7 +71,7 @@ Ext.define('CustomApp', {
         } else {
             this.cargoStore = Ext.create('Rally.data.wsapi.artifact.Store', {
                 models: ['Defect'],
-                fetch: ['FormattedID', 'Name', 'ScheduleState','State','Milestones', 'Project','Blocked','DefectSuites'],
+                fetch: ['FormattedID', 'Name', 'ScheduleState','State','Milestones', 'Project','Blocked','DefectSuites', 'Resolution'],
                 autoLoad: true,
                 filters: myFilters,
                 limit: Infinity,
@@ -100,7 +100,7 @@ Ext.define('CustomApp', {
             enableRanking: true,
             defaultSortToRank: true,
             columnCfgs: [
-                'FormattedID','Name','ScheduleState','State','Milestone','Project','Blocked'
+                'FormattedID','Name','ScheduleState','State','Milestone','Project','Blocked','Resolution'
             ],
             plugins: [
                 'rallyprint'
