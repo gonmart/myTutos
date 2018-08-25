@@ -4,12 +4,12 @@
 <head>
     <title>Cycle Time Data</title>
     <!--  (c) 2016 CA Technologies.  All Rights Reserved. -->
-    <!--  Build Date: Thu Oct 20 2016 15:44:05 GMT-0600 (MDT) -->
+    <!--  Build Date: Tue May 02 2017 18:35:16 GMT-0600 (MDT) -->
 
     <script type="text/javascript">
-        var APP_BUILD_DATE = "Thu Oct 20 2016 15:44:05 GMT-0600 (MDT)";
-        var BUILDER = "kcorkan";
-        var CHECKSUM = 177553509602;
+        var APP_BUILD_DATE = "Tue May 02 2017 18:35:16 GMT-0600 (MDT)";
+        var BUILDER = "corkr03";
+        var CHECKSUM = 180178919205;
     </script>
 
     <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
@@ -138,7 +138,7 @@
                                 }
                             },
                             failure: function (msg) {
-                                console.log("oops:", msg);
+                                // console.log("oops:", msg);
                             }
                         });
                     } else {
@@ -221,8 +221,8 @@
                 getTimeInStateData: function (snapshots, field, value, dateField) {
                     snapshots = _.sortBy(snapshots, dateField);
 
-                    if (value === CArABU.technicalservices.CycleTimeCalculator.creationDateText) {
-                        value = ""
+                    if (value === CArABU.technicalservices.CycleTimeCalculator.noStateText) {
+                        value = "";
                     }
 
                     var inState = snapshots[0][field] === value,
@@ -255,7 +255,8 @@
 
                     var startIdx = -1;
                     precedence = _.filter(precedence, function (r) {
-                        return (r !== CArABU.technicalservices.CycleTimeCalculator.creationDateText);
+                        return (r !== CArABU.technicalservices.CycleTimeCalculator.noStateText ||
+                            r !== "");
                     });
 
                     if (!Ext.isEmpty(startValue)) { //This is in case there is no start value (which means grab the first snapshot)
@@ -286,18 +287,16 @@
                             }
                         }
                         if (stateIdx >= startIdx && previousStateIdx < startIdx && startIdx >
-                            -1) {
+                            -1 && startDate === null) {
                             startDate = thisDate;
                         }
                         if (stateIdx >= endIdx && previousStateIdx < endIdx) {
                             endDate = thisDate;
-
                             if (startDate != null) {
                                 cycleTime = Rally.util.DateTime.getDifference(endDate,
                                     startDate, 'second');
                             }
                         }
-
                     }, this);
 
 
@@ -348,7 +347,7 @@
                 getRenderedTimeInStateValue: function (timeInStateData, stateName, stateValue,
                     noDataText) {
 
-                    var timeData = timeInStateData[stateName];
+                    var timeData = timeInStateData && timeInStateData[stateName];
                     if (timeData && stateValue) {
                         timeData = timeData[stateValue];
                     }
@@ -362,7 +361,7 @@
                 },
                 getFirstStartDate: function (timeInStateData, stateName, stateValue) {
 
-                    var timeData = timeInStateData[stateName];
+                    var timeData = timeInStateData && timeInStateData[stateName];
                     if (timeData && stateValue) {
                         timeData = timeData[stateValue];
                     }
@@ -374,7 +373,7 @@
                 },
                 getLastEndDate: function (timeInStateData, stateName, stateValue) {
                     //console.log('getLastEndDate', stateName, stateValue)
-                    var timeData = timeInStateData[stateName];
+                    var timeData = timeInStateData && timeInStateData[stateName];
                     if (timeData && stateValue) {
                         timeData = timeData[stateValue];
                     }
@@ -908,7 +907,7 @@
                         Ext.Array.each(state.cycleStates, function (s) {
                             if (state.cycleStateField !== "ScheduleState") {
                                 fromStates.push(CArABU.technicalservices.CycleTimeCalculator
-                                    .creationDateText);
+                                    .noStateText);
                             }
                             fromStates.push(s);
                             if (!state.cycleEndState || (state.cycleEndState === s) ||
@@ -937,8 +936,7 @@
                             itemId: 'cb-fromState',
                             allowBlank: true,
                             allowNoEntry: true,
-                            noEntryText: '-- Creation --',
-                            noEntryValue: '-- Creation --',
+                            noEntryText: '-- No State --',
                             fieldLabel: 'Cycle Time State From',
                             labelAlign: 'right',
                             labelWidth: 150,
@@ -1099,6 +1097,7 @@
                         return r.get('value');
                     });
                     states = _.uniq(states);
+
                     return {
                         cycleStateField: cycleTimeField,
                         cycleStartState: cycleStartState,
@@ -1178,7 +1177,7 @@
                     var data = [];
                     if (cb.getValue() !== "ScheduleState") {
                         data.push({
-                            value: CArABU.technicalservices.CycleTimeCalculator.creationDateText
+                            value: CArABU.technicalservices.CycleTimeCalculator.noStateText
                         });
                     }
                     model.getField(cb.getValue()).getAllowedValueStore().load({
@@ -1353,12 +1352,12 @@
                             types: this.modelNames,
                             context: this.context,
                             success: function (models) {
-                                console.log('models');
+                                //console.log('models');
                                 this.models = models;
 
                             },
                             failure: function (failedParam) {
-                                console.log('failedparam');
+                                //console.log('failedparam');
                             },
                             scope: this
                         });
@@ -1547,8 +1546,6 @@
                 }
             });
 
-
-
             Ext.override(Rally.ui.grid.TreeGrid, {
                 _mergeColumnConfigs: function (newColumns, oldColumns) {
 
@@ -1600,7 +1597,7 @@
                         return false;
                     });
 
-                    console.log('added columns', addedColumns, columnConfigs, currentColumns);
+                    // console.log('added columns', addedColumns, columnConfigs, currentColumns);
 
                     return currentColumns.concat(addedColumns);
                 },
@@ -1947,7 +1944,7 @@
                         exportLimit: 1000
                     }
                 },
-                exportDateFormat: 'm/d/Y h:s',
+                exportDateFormat: 'm/d/Y h:i:s',
                 _gridConfig: {},
 
                 launch: function () {
@@ -1987,6 +1984,20 @@
                         margin: '3 9 0 0',
                         stateful: true,
                         stateId: 'grid-filters-1',
+                        inlineFilterPanelConfig: {
+                            quickFilterPanelConfig: {
+                                addQuickFilterConfig: {
+                                    whiteListFields: ['Milestones', 'Tags']
+                                }
+                            },
+                            advancedFilterPanelConfig: {
+                                advancedFilterRowsConfig: {
+                                    propertyFieldConfig: {
+                                        whiteListFields: ['Milestones', 'Tags']
+                                    }
+                                }
+                            }
+                        },
                         listeners: {
                             inlinefilterready: this.addInlineFilterPanel,
                             inlinefilterchange: this.updateGridFilters,
@@ -2534,21 +2545,24 @@
                     if (fromState && toState) {
                         Ext.Array.each(this.getCycleStates(), function (s) {
 
-                            var header = this.getTimeInStateColumnHeader(s);
-                            //if (s === CArABU.technicalservices.CycleTimeCalculator.creationDateText){
-                            //    header =  this.getTimeInStateColumnHeader(CArABU.technicalservices.CycleTimeCalculator.noStateText);
-                            //}
-                            columns.push({
-                                xtype: 'timetemplatecolumn',
-                                dataType: 'timeInStateData',
-                                stateName: this.getStateField(),
-                                stateValue: s,
-                                text: header,
-                                flex: 1
-                            });
-                            if (s === toState) {
-                                return false;
+                            if (s && s.length > 0) {
+                                var header = this.getTimeInStateColumnHeader(s);
+                                //if (s === CArABU.technicalservices.CycleTimeCalculator.creationDateText){
+                                //    header =  this.getTimeInStateColumnHeader(CArABU.technicalservices.CycleTimeCalculator.noStateText);
+                                //}
+                                columns.push({
+                                    xtype: 'timetemplatecolumn',
+                                    dataType: 'timeInStateData',
+                                    stateName: this.getStateField(),
+                                    stateValue: s,
+                                    text: header,
+                                    flex: 1
+                                });
+                                if (s === toState) {
+                                    return false;
+                                }
                             }
+
                         }, this);
                     }
                     this.logger.log('getHistoricalDataColumns', columns);
@@ -2699,7 +2713,15 @@
                         for (var j = 0; j < fetchList.length; j++) {
                             var val = record.get(fetchList[j]);
                             if (Ext.isObject(val)) {
-                                val = val._refObjectName;
+                                if (val._tagsNameArray) {
+                                    var newVal = [];
+                                    Ext.Array.each(val._tagsNameArray, function (t) {
+                                        newVal.push(t.Name);
+                                    });
+                                    val = newVal.join(',');
+                                } else {
+                                    val = val._refObjectName;
+                                }
                             }
                             row.push(val || "");
                         }
@@ -2732,9 +2754,13 @@
                         }
 
                         for (var s = 0; s < states.length; s++) {
-                            row.push(CArABU.technicalservices.CycleTimeCalculator.getRenderedTimeInStateValue(
-                                timeInStateData[stateField], states[s], record.get(states[s]),
-                                ""));
+                            if (timeInStateData) {
+                                row.push(CArABU.technicalservices.CycleTimeCalculator.getRenderedTimeInStateValue(
+                                    timeInStateData[stateField], states[s], record.get(
+                                        states[s]), ""));
+                            } else {
+                                row.push("");
+                            }
                         }
 
                         row = _.map(row, function (v) {

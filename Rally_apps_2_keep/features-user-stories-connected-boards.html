@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Connected Custom Board</title>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function() {
+            (function() {
+                var Ext = window.Ext4 || window.Ext;
+
+                /**
+                 * Allows configuring of rows for the cardboard
+                 *
+                 *
+                 *      @example
+                 *      Ext.create('Ext.Container', {
+                 *          items: [{
+                 *              xtype: 'rowsettingsfield',
+                 *              value: {
+                 *                  show: true,
+                 *                  field: 'c_ClassofService'
+                 *              }
+                 *          }],
+                 *          renderTo: Ext.getBody().dom
+                 *      });
+                 *
+                 */
+                Ext.define('Rally.apps.common.RowSettingsField', {
+                    alias: 'widget.rowsettingsfield',
+                    extend: 'Ext.form.FieldContainer',
+                    requires: [
+                        'Rally.ui.CheckboxField',
+                        'Rally.ui.combobox.ComboBox',
+                        'Rally.ui.plugin.FieldValidationUi',
+                        'Rally.data.ModelFactory',
+                        'Rally.data.wsapi.ModelBuilder'
+                    ],
+
+                    mixins: {
+                        field: 'Ext.form.field.Field'
+                    },
+
+                    layout: 'hbox',
+
+                    cls: 'row-settings',
+
+                    config: {
+                        /**
+                         * @cfg {Object}
+                         *
+                         * The row settings value for this field
+                         */
+                        value: undefined,
+
+                        /**
+                         * @cfg {Function}
+                         * A function which should return true if the specified field should
+                         * be included in the list of available swimlane fields
+                         * @param {Rally.data.wsapi.Field} field
+                         */
+                        isAllowedFieldFn: Ext.emptyFn,
+
+                        /**
+                         * @cfg {Object[]}
+                         *
+                         * Array of objects with name and value keys to be used by the row combobox
+                         * [{'name': 'Blocked', 'value': 'Blocked'},{'name': 'Owner', 'value': 'Owner'}]
+                         */
+                        explicitFields: [],
+
+                        /**
+                         * @cfg {String[]}
+                         * Array of models for which to list fields for
+                         */
+                        modelNames: ['userstory', 'defect'],
+
+                        /**
+                         * @cfg {String[]}
+                         * Array of field display names to show if found on at least 1 model, sortable and are not hidden
+                         */
+                        whiteListFields: []
+                    },
+
+                    initComponent: function() {
+                        this.callParent(arguments);
+
+                        this.mixins.field.initField.call(this);
+
+                        this.add([{
+                                xtype: 'rallycheckboxfield',
+                                name: 'showRows',
+                                boxLabel: '',
+                                margin: '0',
+                                submitValue: false,
+                                value: this.getValue().showRows,
+                                listeners: {
+                                    change: function(checkbox, checked) {
+                                        this.down('rallycombobox').setDisabled(!checked);
+                                    },
+                                    scope: this
+                                }
+                            },
+                            {
+                                xtype: 'rallycombobox',
+                                plugins: ['rallyfieldvalidationui'],
+                                name: 'rowsField',
+                                margin: '0 6px',
+                                width: 130,
+                                emptyText: 'Choose Field...',
+                                displayField: 'name',
+                                valueField: 'value',
+                                disabled: this.getValue().showRows !== 'true',
+                                editable: false,
+                                submitValue: false,
+                                storeType: 'Ext.data.Store',
+                                storeConfig: {
+                                    remoteFilter: false,
+                                    fields: ['name', 'value'],
+                                    data: []
+                                }
+                            }
+                        ]);
+
+                        this._loadModels();
+                    },
+
+                    _loadModels: function() {
+                        Rally.data.ModelFactory.getModels({
+                            types: this.getModelNames(),
+                            context: this.context,
+                            success: this._onModelsRetrieved,
+                            scope: this
+                        });
+                    },
+
+                    _onModelsRetrieved: function(models) {
+                        var fields = _.uniq(Ext.Array.merge(this.explicitFields, this._getRowableFields(_.values(models))), 'name');
+                        var combobox = this.down('rallycombobox');
+                        combobox.getStore().loadData(_.sortBy(fields, 'name'));
+                        combobox.setValue(this.getValue().rowsField);
+                        this.fireEvent('ready', this);
+                    },
+
+                    _getRowableFields: function(models) {
+                        var artifactModel = Rally.data.wsapi.ModelBuilder.buildCompositeArtifact(models, this.context),
+                            allFields = artifactModel.getFields(),
+                            rowableFields = _.filter(allFields, function(field) {
+                                var attr = field.attributeDefinition;
+                                return attr && !attr.Hidden && attr.Sortable &&
+                                    ((artifactModel.getModelsForField(field).length === models.length &&
+                                        this.isAllowedFieldFn(field)) || _.contains(this.whiteListFields, field.displayName));
+                            }, this);
+
+                        return _.map(rowableFields, function(field) {
+                            return {
+                                name: field.displayName,
+                                value: field.name
+                            };
+                        });
+                    },
+
+                    /**
+                     * When a form asks for the data this field represents,
+                     * give it the name of this field and the ref of the selected project (or an empty string).
+                     * Used when persisting the value of this field.
+                     * @return {Object}
+                     */
+                    getSubmitData: function() {
+                        var data = {},
+                            showField = this.down('rallycheckboxfield'),
+                            rowsField = this.down('rallycombobox'),
+                            showRows = showField.getValue() && !_.isEmpty(rowsField.getValue());
+                        data[showField.name] = showRows;
+                        if (showRows) {
+                            data[rowsField.name] = rowsField.getValue();
+                        }
+                        return data;
+                    },
+
+                    refreshWithNewModelType: function(type) {
+                        this.setModelNames([type]);
+                        this._loadModels();
+                    }
+                });
+            })();
+
+            (function() {
+                var Ext = window.Ext4 || window.Ext;
+
+                Ext.define('Rally.apps.board.Settings', {
+                    singleton: true,
+                    requires: [
+                        'Rally.ui.combobox.FieldComboBox',
+                        'Rally.ui.combobox.ComboBox',
+                        'Rally.ui.TextField',
+                        'Rally.ui.NumberField',
+                        'Rally.apps.common.RowSettingsField',
+                        'Rally.data.wsapi.Filter'
+                    ],
+
+                    getFields: function(context) {
+                        return [{
+                                name: 'type',
+                                xtype: 'rallycombobox',
+                                shouldRespondToScopeChange: true,
+                                context: context,
+                                storeConfig: {
+                                    model: Ext.identityFn('TypeDefinition'),
+                                    sorters: [{
+                                        property: 'Name'
+                                    }],
+                                    fetch: ['DisplayName', 'ElementName', 'TypePath', 'Parent'],
+                                    filters: [{
+                                        property: 'Creatable',
+                                        value: true
+                                    }],
+                                    autoLoad: false,
+                                    remoteSort: false,
+                                    remoteFilter: true
+                                },
+                                displayField: 'DisplayName',
+                                valueField: 'TypePath',
+                                listeners: {
+                                    select: function(combo, records) {
+                                        combo.fireEvent('typeselected', records[0].get('TypePath'), combo.context);
+                                    },
+                                    ready: function(combo) {
+                                        combo.store.sort('DisplayName');
+                                        combo.store.filterBy(function(record) {
+                                            var parent = record.get('Parent'),
+                                                parentName = parent.ElementName;
+                                            return _.contains(['Artifact', 'SchedulableArtifact', 'Requirement', 'PortfolioItem'], parentName);
+                                        });
+                                        combo.fireEvent('typeselected', combo.getRecord().get('TypePath'), combo.context);
+                                    }
+                                },
+                                bubbleEvents: ['typeselected'],
+                                readyEvent: 'ready',
+                                handlesEvents: {
+                                    projectscopechanged: function(context) {
+                                        this.refreshWithNewContext(context);
+                                    }
+                                }
+                            },
+                            {
+                                name: 'groupByField',
+                                fieldLabel: 'Columns',
+                                xtype: 'rallyfieldcombobox',
+                                readyEvent: 'ready',
+                                handlesEvents: {
+                                    typeselected: function(type, context) {
+                                        this.refreshWithNewModelType(type, context);
+                                    }
+                                },
+                                listeners: {
+                                    ready: function(combo) {
+                                        combo.store.filterBy(function(record) {
+                                            var field = record.get('fieldDefinition'),
+                                                attr = field.attributeDefinition;
+                                            return attr && !attr.ReadOnly && !attr.Hidden && attr.Constrained && attr.AttributeType !== 'COLLECTION' &&
+                                                (!attr.AllowedValueType || attr.AllowedValueType._refObjectName !== 'User') &&
+                                                !_.contains(['Iteration', 'Release', 'Project'], attr.Name) &&
+                                                !field.isMappedFromArtifact;
+                                        });
+                                        var fields = Ext.Array.map(combo.store.getRange(), function(record) {
+                                            return record.get(combo.getValueField());
+                                        });
+                                        if (!Ext.Array.contains(fields, combo.getValue())) {
+                                            combo.setValue(fields[0]);
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                name: 'groupHorizontallyByField',
+                                xtype: 'rowsettingsfield',
+                                fieldLabel: 'Swimlanes',
+                                mapsToMultiplePreferenceKeys: ['showRows', 'rowsField'],
+                                readyEvent: 'ready',
+                                isAllowedFieldFn: function(field) {
+                                    var attr = field.attributeDefinition;
+                                    return (attr.Custom && (attr.Constrained || attr.AttributeType.toLowerCase() !== 'string') ||
+                                            attr.Constrained || _.contains(['quantity', 'boolean'], attr.AttributeType.toLowerCase()) ||
+                                            (!attr.Constrained && attr.AttributeType.toLowerCase() === 'object')) &&
+                                        !_.contains(['web_link', 'text', 'date'], attr.AttributeType.toLowerCase()) &&
+                                        !_.contains(['PortfolioItemType', 'LastResult'], attr.ElementName);
+                                },
+                                handlesEvents: {
+                                    typeselected: function(type, context) {
+                                        this.refreshWithNewModelType(type, context);
+                                    }
+                                }
+                            },
+                            {
+                                name: 'order',
+                                fieldLabel: 'Order',
+                                xtype: 'rallyfieldcombobox',
+                                readyEvent: 'ready',
+                                handlesEvents: {
+                                    typeselected: function(type, context) {
+                                        this.refreshWithNewModelType(type, context);
+                                    }
+                                },
+                                listeners: {
+                                    ready: function(combo) {
+                                        combo.store.filterBy(function(record) {
+                                            var field = record.get('fieldDefinition'),
+                                                attr = field.attributeDefinition;
+                                            return attr && attr.Sortable && !field.isMappedFromArtifact;
+                                        });
+                                    }
+                                },
+                                initialValue: context.getWorkspace().WorkspaceConfiguration.DragDropRankingEnabled ? 'DragAndDropRank' : 'Rank'
+                            },
+                            {
+                                type: 'query'
+                            }
+                        ];
+                    }
+                });
+            })();
+
+            (function() {
+                var Ext = window.Ext4 || window.Ext;
+
+
+
+
+                // Ext.define('FilteredCard', {
+                //         extend: 'Rally.ui.cardboard.Card',
+                //         alias: 'widget.filteredcard',
+                //         afterRender: function() {
+                //             this.callParent(arguments);
+                //             this.getEl().on("click",this._onCardClick, this);
+                //         },
+
+                //         _onCardClick: function() {
+                //             this.fireEvent('cardclick', this, this.getRecord());
+                //         }
+                // } );
+
+
+                Ext.define('Rally.apps.board.BoardApp', {
+                    extend: 'Rally.app.App',
+                    alias: 'widget.boardapp',
+
+                    requires: [
+                        'Rally.ui.cardboard.plugin.FixedHeader',
+                        'Rally.ui.gridboard.GridBoard',
+                        'Rally.ui.gridboard.plugin.GridBoardAddNew',
+                        'Rally.ui.gridboard.plugin.GridBoardCustomFilterControl',
+                        'Rally.ui.gridboard.plugin.GridBoardFieldPicker',
+                        'Rally.data.util.Sorter',
+                        'Rally.apps.board.Settings',
+                        'Rally.clientmetrics.ClientMetricsRecordable'
+                    ],
+                    mixins: [
+                        'Rally.clientmetrics.ClientMetricsRecordable',
+                        'Rally.Messageable'
+                    ],
+
+                    helpId: 287,
+                    cls: 'customboard',
+                    autoScroll: false,
+                    layout: 'fit',
+
+                    config: {
+                        defaultSettings: {
+                            type: 'HierarchicalRequirement',
+                            groupByField: 'ScheduleState',
+                            showRows: false,
+                            eventType: 'None'
+                        }
+                    },
+
+                    _otherBoardCardClick: function(card) {
+                        this.filterToParent = card;
+                        this._addBoard();
+                    },
+
+                    launch: function() {
+                        this.filterToParent = null;
+
+                        if (this.getSetting('eventType') == "Receive") {
+                            this.subscribe(this, 'cardClick', this._otherBoardCardClick, this);
+                        }
+
+                        Rally.data.ModelFactory.getModel({
+                            type: this.getSetting('type'),
+                            context: this.getContext().getDataContext()
+                        }).then({
+                            success: function(model) {
+                                this.model = model;
+                                this.add(this._getGridBoardConfig());
+                                // this.publish("launchEvent");
+                            },
+                            scope: this
+                        });
+                    },
+
+                    _getGridBoardConfig: function() {
+                        var context = this.getContext(),
+                            modelNames = [this.getSetting('type')],
+                            config = {
+                                xtype: 'rallygridboard',
+                                stateful: false,
+                                toggleState: 'board',
+                                cardBoardConfig: this._getBoardConfig(),
+                                plugins: [{
+                                        ptype: 'rallygridboardaddnew',
+                                        addNewControlConfig: {
+                                            stateful: true,
+                                            stateId: context.getScopedStateId('board-add-new')
+                                        }
+                                    },
+                                    {
+                                        ptype: 'rallygridboardcustomfiltercontrol',
+                                        filterChildren: false,
+                                        filterControlConfig: {
+                                            margin: '3 9 3 30',
+                                            modelNames: modelNames,
+                                            stateful: true,
+                                            stateId: context.getScopedStateId('board-custom-filter-button')
+                                        },
+                                        showOwnerFilter: true,
+                                        ownerFilterControlConfig: {
+                                            stateful: true,
+                                            stateId: context.getScopedStateId('board-owner-filter')
+                                        }
+                                    },
+                                    {
+                                        ptype: 'rallygridboardfieldpicker',
+                                        headerPosition: 'left',
+                                        boardFieldBlackList: ['Successors', 'Predecessors', 'DisplayColor'],
+                                        modelNames: modelNames
+                                    }
+                                ],
+                                context: context,
+                                modelNames: modelNames,
+                                storeConfig: {
+                                    filters: this._getFilters()
+                                },
+                                listeners: {
+                                    load: this._onLoad,
+                                    scope: this
+                                }
+                            };
+                        if (this.getEl()) {
+                            config.height = this.getHeight();
+                        }
+                        return config;
+                    },
+
+                    _onLoad: function() {
+                        this.recordComponentReady({
+                            miscData: {
+                                type: this.getSetting('type'),
+                                columns: this.getSetting('groupByField'),
+                                rows: (this.getSetting('showRows') && this.getSetting('rowsField')) || ''
+                            }
+                        });
+                    },
+
+                    _getBoardConfig: function() {
+                        var that = this;
+
+                        var boardConfig = {
+                            margin: '10px 0 0 0',
+                            attribute: this.getSetting('groupByField'),
+                            context: this.getContext(),
+                            cardConfig: {
+                                editable: true,
+                                showIconMenus: true
+                            },
+                            loadMask: true,
+                            plugins: [{
+                                ptype: 'rallyfixedheadercardboard'
+                            }],
+                            storeConfig: {
+                                sorters: Rally.data.util.Sorter.sorters(this.getSetting('order'))
+                            },
+                            columnConfig: {
+                                fields: (this.getSetting('fields') &&
+                                    this.getSetting('fields').split(',')) || []
+                            }
+
+                        };
+                        if (this.getSetting('showRows')) {
+                            Ext.merge(boardConfig, {
+                                rowConfig: {
+                                    field: this.getSetting('rowsField'),
+                                    sortDirection: 'ASC'
+                                }
+                            });
+                        }
+                        if (this._shouldDisableRanking()) {
+                            boardConfig.enableRanking = false;
+                            boardConfig.enableCrossColumnRanking = false;
+                            boardConfig.cardConfig.showRankMenuItems = false;
+                        }
+
+                        if (this.getSetting('eventType') == "Send") {
+                            Ext.merge(boardConfig, {
+                                cardConfig: {
+                                    xtype: 'filteredcard',
+                                    listeners: {
+                                        'cardclick': {
+                                            fn: function(a, b, c) {
+                                                this.publish("cardClick", b);
+                                            },
+                                            scope: this
+                                        }
+                                    }
+                                }
+                            })
+                        }
+
+                        return boardConfig;
+                    },
+
+                    getSettingsFields: function() {
+
+                        var eventsStore = new Ext.data.ArrayStore({
+                            fields: ['event'],
+                            data: [
+                                ['None'],
+                                ['Send'],
+                                ['Receive']
+                            ]
+                        });
+
+                        return Rally.apps.board.Settings.getFields(this.getContext())
+                            .concat([{
+                                name: 'eventType',
+                                xtype: 'combo',
+                                store: eventsStore,
+                                valueField: 'event',
+                                displayField: 'event',
+                                queryMode: 'local',
+                                forceSelection: true,
+                                fieldLabel: 'Events'
+                            }]);
+                    },
+
+                    _shouldDisableRanking: function() {
+                        return this.getSetting('type').toLowerCase() === 'task' && (!this.getSetting('showRows') || this.getSetting('showRows') &&
+                            this.getSetting('rowsField').toLowerCase() !== 'workproduct');
+                    },
+
+                    _addBoard: function() {
+                        var gridBoard = this.down('rallygridboard');
+                        if (gridBoard) {
+                            gridBoard.destroy();
+                        }
+                        this.add(this._getGridBoardConfig());
+                    },
+
+                    onTimeboxScopeChange: function(timeboxScope) {
+                        this.callParent(arguments);
+                        this._addBoard();
+                    },
+
+                    _getFilters: function() {
+                        var queries = [],
+                            timeboxScope = this.getContext().getTimeboxScope();
+                        if (this.getSetting('query')) {
+                            queries.push(Rally.data.QueryFilter.fromQueryString(this.getSetting('query')));
+                        }
+                        if (timeboxScope && timeboxScope.isApplicable(this.model)) {
+                            queries.push(timeboxScope.getQueryFilter());
+                        }
+                        if (!_.isNull(this.filterToParent)) {
+                            var field = null;
+                            var boardType = this.getSetting('type').toLowerCase().split("/")[0];
+                            switch (boardType) {
+                                case 'task':
+                                    field = 'WorkProduct';
+                                    break;
+                                case 'hierarchicalrequirement':
+                                    field = 'Feature';
+                                    break;
+                                case 'portfolioitem':
+                                    field = 'Parent';
+                                    break;
+                                case 'testcase':
+                                    field = 'WorkProduct';
+                                    break;
+                                case 'defect':
+                                    field = 'Requirement';
+                                    break;
+                                default:
+                                    field = 'Parent';
+                            }
+
+                            var filter = Ext.create('Rally.data.wsapi.Filter', {
+                                property: field,
+                                operator: '=',
+                                value: this.filterToParent.get("_ref")
+                            });
+                            queries.push(filter);
+                        }
+                        return queries;
+                    }
+                });
+            })();
+
+            // config - Events : Send, Receive, None (Default)
+            // If sender use custom card which publishes the model of the card that is clicked.
+            // If receiver filters board to the children of the received model. 
+            // Mapping of types for receiver board
+            // Task -> WorkProduct
+            // Story -> Feature
+            // PortfolioItem -> Parent
+            // TestCase -> WorkProduct
+
+
+
+            Ext.define('FilteredCard', {
+                extend: 'Rally.ui.cardboard.Card',
+                alias: 'widget.filteredcard',
+                afterRender: function() {
+                    this.callParent(arguments);
+                    this.getEl().on("click", this._onCardClick, this);
+                },
+
+                _onCardClick: function() {
+                    this.fireEvent('cardclick', this, this.getRecord());
+                }
+            });
+
+
+            Rally.launchApp('Rally.apps.board.BoardApp', {
+                name: "Custom Board",
+                parentRepos: ""
+            });
+
+        });
+
+    </script>
+
+
+
+    <style type="text/css">
+        .customboard {
+            overflow-y: hidden;
+        }
+
+    </style>
+</head>
+
+<body>
+</body>
+
+</html>

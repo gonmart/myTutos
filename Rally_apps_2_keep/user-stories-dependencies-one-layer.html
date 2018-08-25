@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dependency (One-Layer)</title>
+
+    <script type="text/javascript" src="/apps/2.0/sdk.js"></script>
+    <script type="text/javascript" src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/1.10.7/js/jquery.dataTables.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/tabletools/2.2.4/js/dataTables.tableTools.min.js"></script>
+
+    <script type="text/javascript">
+    Rally.onReady(function () {
+                Ext.define('CustomApp', {
+	extend: 'Rally.app.App',
+	componentCls: 'app',
+
+	items: [
+		{ xtype:'container', itemId:'settings-box', layout: 'hbox' }
+	],
+
+	onTimeboxScopeChange: function(timeboxScope) {
+		this._getTimeboxScope(timeboxScope);
+	},
+
+	launch: function() {
+		this.pleaseWait = new Ext.LoadMask(this, {});
+
+		this.down('#settings-box').add([
+			{
+				xtype: 'rallybutton',
+				itemId: 'run-button',
+				margin: '10 20 10 0',
+				text: 'Run',
+				handler: this._launch,
+				scope: this
+			},
+			{
+				xtype: 'container',
+				layout: 'hbox',
+				items: [
+					{
+						xtype: 'panel',
+						html: '<div class="inter-risk"></div>'
+					},
+					{
+						xtype: 'panel',
+						html: 'Inter-Team Risk',
+						border: false,
+						padding: '3'
+					},
+					{
+						xtype: 'panel',
+						html: '<div class="ext-risk"></div>'
+					},
+					{
+						xtype: 'panel',
+						html: 'Ext-Team Risk',
+						border: false,
+						padding: '3'
+					},					
+					{
+						xtype: 'panel',
+						html: '<div class="blocked-risk"></div>'
+					},
+					{
+						xtype: 'panel',
+						html: 'Blocked Risk',
+						border: false,
+						padding: '3'
+					}
+				],
+				margin: '10 0 10 0'
+			}
+		]);
+
+		this.add(Ext.create('DataTablePanel', {
+			itemId: 'dependency-table',
+			tableInit: {
+				// autoWidth: false,
+				dom: 'T<"clear">lfrtip',
+				tableTools: {
+					'sSwfPath': 'https://cdn.datatables.net/tabletools/2.2.4/swf/copy_csv_xls_pdf.swf'
+				},
+				paging: false,
+				scrollY: window.innerHeight - 200,
+				scrollCollapse: true
+			},
+			tableColumns: [
+				{
+					dataIndex: 'Functional_FormattedID',
+					text: 'ID',
+					className: 'green'
+				},
+				{
+					dataIndex: 'Functional_Name',
+					text: 'Name',
+					className: 'green',
+					width: '20%'
+				},
+				{
+					dataIndex: 'Functional_Project',
+					text: 'Project',
+					className: 'green'
+				},
+				{
+					dataIndex: 'Functional_PlanEstimate',
+					text: 'Plan Estimate',
+					className: 'green'
+				},
+				{
+					dataIndex: 'Functional_StoryType',
+					text: 'Story Type',
+					className: 'green'
+				},
+				{
+					dataIndex: 'Pred_FormattedID',
+					text: 'ID',
+					className: 'blue'
+				},
+				{
+					dataIndex: 'Pred_Name',
+					text: 'Name',
+					className: 'blue',
+					width: '20%'
+				},
+				{
+					dataIndex: 'Pred_Project',
+					text: 'Project',
+					className: 'blue'
+				},
+				{
+					dataIndex: 'Pred_ScheduleState',
+					text: 'Schedule State',
+					className: 'blue'
+				},
+				{
+					dataIndex: 'Pred_PlanStart',
+					text: 'Plan Start',
+					className: 'blue'
+				},
+				{
+					dataIndex: 'Pred_PlanComplete',
+					text: 'Plan Complete',
+					className: 'blue'
+				},
+				{
+					dataIndex: 'Pred_StoryType',
+					text: 'Story Type',
+					className: 'blue'
+				},
+				{
+					dataIndex: 'Reason',
+					text: 'Reason',
+					className: 'red reason',
+					width: '12%'
+				}
+			],
+			groupColumns: [
+				{
+					group: 'Functional Story',
+					span: 5,
+					className: 'green'
+				},
+				{
+					group: 'Predecessor Dependency Story',
+					span: 7,
+					className: 'blue'
+				},
+				{
+					group: '',
+					span: 2,
+					className: 'red'
+				}
+			],
+			width: window.innerWidth - 20
+		}));
+
+		this._getTimeboxScope();
+	},
+
+	_getTimeboxScope: function(timeboxScope) {
+		if(!timeboxScope) {
+			timeboxScope = this.getContext().getTimeboxScope();
+		}
+
+		// null if timeboxScope is Unscheduled
+		this.timebox = timeboxScope.getRecord();
+	},
+
+	_launch: function(){
+		this.pleaseWait.show();
+		
+		Deft.Chain.pipeline([
+			this._queryUserStories,
+			this._queryPredecessors,
+			this._queryProjects
+		], this)
+		.then({
+			success: function(results) {
+				this.pleaseWait.hide();
+				this._createProjectHierarchy(results);
+
+				var selectBusinessPillars = 53197762302; //internal-teams filter
+				_.each(results, function(record) {
+					if(selectBusinessPillars === record.get('ObjectID')) { //find project record
+						selectBusinessPillars = record;
+					}
+				});
+				
+				this._projects = _.map(this._getChildren(selectBusinessPillars, []), function(project) {
+					return project.get('Name');
+				}, this);
+
+				var data = this._stories;
+				this._processData(data);
+			},
+			scope: this
+		});
+	},
+	
+	_queryUserStories: function(){
+		return Ext.create('Rally.data.wsapi.Store', {
+			model: 'User Story',
+			context: this.getContext().getDataContext(),
+			fetch: [
+				'Name',
+				'ObjectID',
+				'FormattedID',
+				'Predecessors',
+				'Project',
+				'PlanEstimate',
+				'c_StoryType',
+				'c_CodeName'
+			],
+			filters: [{
+				property: 'Iteration.Name',
+				operator: '=',
+				value: this.timebox ? this.timebox.get('Name') : null
+			}],
+			limit: Infinity
+		}).load();
+	},
+
+	_queryPredecessors: function(results) {
+		this._stories = results;
+
+		return this._getCollection(results, 'Predecessors', {
+			fetch: [
+				'FormattedID',
+				'Name',
+				'Project',
+				'ScheduleState',				
+				'Iteration',
+				'EndDate',
+				'Blocked',
+				'DirectChildrenCount',
+				'c_StoryType',
+				'c_PlannedCompleteDate',
+				'c_PlanStartSustainArch',
+				'c_PlanCompleteSustainArch',
+				'c_PlanStartHTML',
+				'c_PlanCompleteHTML',
+				'c_UXPlanStart',
+				'c_UXPlanComplete'
+			]
+		});
+	},
+
+	_queryProjects: function() {
+		return Ext.create('Rally.data.wsapi.Store', {
+			model: 'Project',
+			limit: Infinity,
+			compact: false,
+            fetch: ['Name', 'Parent']
+		}).load();
+	},
+
+	_getCollection: function(records, fieldName, config) {
+		var promises = [];
+
+		_.each(records, function(record) {
+			var collection = record.get(fieldName);
+			collection.records = record.getCollection(fieldName, config);
+			promises.push(collection.records.load());
+		});
+
+		var deferred = Ext.create('Deft.Deferred');
+		deferred.resolve([]);
+		promises.push(deferred.promise);
+
+		return Deft.Promise.reduce(promises, function(prev, cur) {
+			return prev.concat(cur);
+		}, []);
+	},
+
+	_createProjectHierarchy: function(records) {
+		var parentOid;
+        this._projectHierarchy = {};
+
+        _.each(records, function(record) {
+            parentOid = record.get('Parent') && record.get('Parent')._ref && Rally.util.Ref.getOidFromRef(record.get('Parent')._ref);
+            if(parentOid) {
+                if(!this._projectHierarchy[parentOid]) {
+                    this._projectHierarchy[parentOid] = [];
+                }
+                this._projectHierarchy[parentOid].push(record);
+            }
+        }, this);
+	},
+
+	_getChildren: function(parentRecord, children) {
+        if(this._projectHierarchy[parentRecord.get('ObjectID')]) {
+            _.each(this._projectHierarchy[parentRecord.get('ObjectID')], function(record) {
+                children.push(record);
+                this._getChildren(record, children);
+            }, this);
+        }
+        return children;
+    },
+
+	_processData: function(data) {
+		var table;
+
+		table = this.down('#dependency-table');
+		table.setTableData(this._getPredecessorData(data));
+		this._highlightRows(table.table);
+	},
+
+	_getPredecessorData: function(data) {
+		var tableData = [],
+			functionalData = {},
+			predecessorData = {};
+
+		_.each(data, function(functional) {
+			var startDate = this.timebox ? this.timebox.get('StartDate') : null;
+			var today = new Date();
+
+			functionalData = {
+				Functional_FormattedID: this._href(functional.data),
+				Functional_Name: functional.get('Name'),
+				Functional_Project: functional.get('Project').Name,
+				Functional_PlanEstimate: functional.get('PlanEstimate'),
+				Functional_StoryType: functional.get('StoryType')
+			};
+
+			_.each(functional.get('Predecessors').records.data.items, function(predecessor) {
+				var planStart = this._getPlannedStart(predecessor),
+					planComplete = this._getPlannedComplete(predecessor),
+					reason = null;
+
+				if(predecessor.get('ScheduleState') !== 'Accepted') 
+					reason =
+						(!planComplete.date ?
+							planComplete.team + ' ' + 'Dependency No Planned Complete Date' : null) ||
+						(planComplete.date && planComplete.date > startDate ?
+							planComplete.team + ' ' + 'Dependency Date Exceeds' : null) ||
+						(planComplete.date && planComplete.date <= startDate && planComplete.date < today ?
+							planComplete.team + ' ' + 'Dependency Not Accepted' : null) ||
+						(predecessor.get('Blocked') ?
+							'Dependency Blocked' : null);
+
+				predecessorData = {
+					Pred_FormattedID: this._href(predecessor.data),
+					Pred_Name: predecessor.get('Name'),
+					Pred_Project: predecessor.get('Project').Name,
+					Pred_ScheduleState: predecessor.get('ScheduleState'),
+					Pred_PlanStart: Ext.Date.format(planStart, 'Y-m-d'),
+					Pred_PlanComplete: Ext.Date.format(planComplete.date, 'Y-m-d'),
+					Pred_StoryType: predecessor.get('StoryType'),
+					Reason: reason
+				};
+
+				tableData.push(Ext.apply(predecessorData, functionalData));
+			}, this); // end predecessors
+		}, this); // end data
+
+		return tableData;
+	},
+
+	_getPlannedComplete: function(predecessor) {
+		var plannedComplete = {},
+			project = predecessor.get('Project').Name;
+
+		if(this._projects.indexOf(project) >= 0) {
+			plannedComplete.team = 'Inter-Team';
+		}
+		else {
+			plannedComplete.team = 'Ext-Team';
+		}
+
+		plannedComplete.date = 
+			predecessor.get('c_PlannedCompleteDate') ||
+			predecessor.get('c_PlanCompleteSustainArch') ||
+			(predecessor.get('Project').Name === 'HTML' && predecessor.get('c_PlanCompleteHTML')) ||
+			(predecessor.get('Project').Name === 'User Experience (UX)' && predecessor.get('c_UXPlanComplete')) ||
+			(predecessor.get('Iteration') && Ext.Date.parse(predecessor.get('Iteration').EndDate, 'c'));
+
+		return plannedComplete;
+	},
+
+	_getPlannedStart: function(predecessor) {
+		var plannedStart;
+
+		plannedStart =
+			predecessor.get('c_PlanStartSustainArch') ||
+			(predecessor.get('Project').Name === 'HTML' && predecessor.get('c_PlanStartHTML')) ||
+			(predecessor.get('Project').Name === 'User Experience (UX)' && predecessor.get('c_UXPlanStart'));
+
+		return plannedStart;
+	},
+
+	_href: function(item) {
+		var str = [];
+		var type = item._type;
+
+		if (item._type === 'hierarchicalrequirement') {
+			type = 'userstory';
+		}
+
+		str.push(
+			'<a href="https://rally1.rallydev.com/#/detail/', type.toLowerCase(), '/',
+				item.ObjectID, '" target="_blank">',
+				item.FormattedID,
+			'</a>'
+		);
+
+		return str.join('');
+	},
+
+	_highlightRows: function(table) {
+		var colIdx = table.column('.reason').index();
+
+		var selectRows = table.rows().eq(0).filter(function(index) {
+			return table.cell(index, colIdx).data() && table.cell(index, colIdx).data().indexOf('Inter-Team') >= 0;
+		});
+
+		// console.log(selectRows);
+		selectRows.each(function(value) {
+			table.rows(value)//cells(value, '.blue')
+			.nodes()
+			.to$()
+			.addClass('inter-risk');
+		});
+
+		selectRows = table.rows().eq(0).filter(function(index) {
+			return table.cell(index, colIdx).data() && table.cell(index, colIdx).data().indexOf('Ext-Team') >= 0;
+		});
+
+		selectRows.each(function(value) {
+			table.rows(value)//cells(value, '.green')
+			.nodes()
+			.to$()
+			.addClass('ext-risk');
+		});
+
+		selectRows = table.rows().eq(0).filter(function(index) {
+			return table.cell(index, colIdx).data() && table.cell(index, colIdx).data().indexOf('Blocked') >= 0;
+		});
+
+		selectRows.each(function(value) {
+			table.rows(value)
+			.nodes()
+			.to$()
+			.addClass('blocked-risk');
+		});
+	}
+});
+                Ext.define('DataTablePanel', {
+    extend: 'Ext.Panel',
+
+    manageHeight: false,
+    itemId: null,
+    fields: null,
+    tpl: null,  
+    table: null,
+    footer: false,
+    // width: window.innerWidth * 0.98,
+
+    constructor: function(config){
+        var me = this,
+            thead = '',
+            tfoot = '';
+
+        me.mergeConfig(config);
+        me.callParent();
+
+        me.fields = Ext.create('DataFields', me.tableColumns);
+        me.tplData = {
+            id: me.itemId,
+            cls: 'cell-border compact hover',
+            attr: 'width="100%"',
+            header: [{ th: me.fields._toTableHeader() }]
+        };
+
+        if(me.groupColumns) {
+            var tr = { th: [] },
+                tpl = new Ext.Template('<th class="{className}" colspan="{span}">{group}</th>');
+
+            var curr = 0;
+            thArr = me.tplData.header[0].th;
+            _.each(me.groupColumns, function(item) {
+                item.span = item.span || 1;
+                tr.th.push(tpl.apply(item));
+                
+                var substr = '<span hidden="true">' + item.group + ' </span>';
+                for (var i = 0; i < item.span && curr < thArr.length; i++) {
+                    var newstr = thArr[curr].split('');
+                    newstr.splice(4, 0, substr);
+                    thArr[curr] = newstr.join('');
+                    curr++;
+                }
+            });
+
+            me.tplData.header.unshift(tr);
+        }
+
+        if(me.footer) {
+            me.tplData = Ext.apply({
+                footer: me.fields._toTableFooter()
+            }, me.tplData);
+
+            tfoot = '<tfoot><tr><tpl for="footer">{.}</tpl></tr></tfoot>';
+        }
+
+        thead = '<thead><tpl for="header"><tr><tpl for="th">{.}</tpl></tr></tpl></thead>';
+        me.tpl = new Ext.XTemplate(
+            '<table id="{id}" class="{cls}" {attr}>',
+                thead,
+                tfoot,
+            '</table>',
+            '<br>'
+        );
+    },
+
+    initComponent: function() {
+        var me = this;
+
+        me.callParent();
+
+        me.on('boxready', me._initDataTable);
+        me.on('rowsChanged', me._drawRows);
+    },
+
+    _initDataTable: function() {
+        var me = this;
+
+        me.tpl.overwrite(me.body, me.tplData);
+        me.tableInit.columns = me.fields._toDataColumns();
+
+        var init = Ext.apply({
+            stateSave: true,
+            stateDuration: 60 * 60 * 24 * 30, //30 days
+            destroy: true
+        }, me.tableInit);
+
+        var selector = '#' + me.itemId;
+        me.table = $(selector).DataTable(init);
+        me.update();
+    },
+
+    setTableData: function(data) {
+        var me = this;
+        var row = me.fields._toObjectKeys();
+
+        me.fireEvent('rowsChanged', data);
+    },
+
+    setFooter: function(name, footerFn) {
+        var me = this;
+
+        if(me.footer) {
+            var column = me.table.column(0);
+            $(column.footer()).html(name);
+
+            footerFn(me.table);
+        }
+    },
+
+    addColumns: function(columns) {
+        var me = this;
+        var data = me.table.data();
+
+        // if(me.groupColumns) {
+        //     return;
+        // }
+
+        me.fields._addFields(columns);
+        me.tplData.header = [{ th: me.fields._toTableHeader() }];
+
+        if(me.footer) {
+            me.tplData.footer = me.fields._toTableFooter();
+        }
+
+        me._initDataTable();
+        me.setTableData(data);
+    },
+
+    removeColumns: function(start, deleteCount) {
+        var me = this;
+        var data = me.table.data();
+
+        // if(me.groupColumns) {
+        //     return;
+        // }
+
+        me.fields._removeFields(start, deleteCount);
+        me.tplData.header = [{ th: me.fields._toTableHeader() }];
+
+        if(me.footer) {
+            me.tplData.footer = me.fields._toTableFooter();
+        }
+
+        me._initDataTable();
+        me.setTableData(data);
+    },
+
+    addFooterFilters: function() {
+        var me = this;
+
+        if(me.footer) {
+            me.table.columns().every(function() {
+                var column = this;
+                var select = $('<select><option value=""></option></select>')
+                    .appendTo($(column.footer()).empty())
+                    .on('change', function() {
+                        var val = $.fn.dataTable.util.escapeRegex(
+                            $(this).val()
+                        );
+
+                        column
+                            .search(val ? '^'+val+'$' : '', true, false)
+                            .draw();
+                    });
+
+                column.data().unique().sort().each(function(d, j) {
+                    select.append('<option value="'+d+'">'+d+'</option>');
+                });
+            });
+        }
+    },
+
+    _getColumnTotals: function(table) {
+        table.columns('.sum').every(function () {
+            var sum = this.data()
+                .reduce(function(a, b) {
+                    
+                    return parseInt(a + b, 10);
+                }, 0);
+            sum = +(Math.round(sum + 'e+1') + 'e-1');
+            $(this.footer()).html(sum);
+        });
+    },
+
+    _drawRows: function(data) {
+        var me = this;
+
+        me.table.clear();
+        me.table.rows.add(data).draw();
+        me.table.columns.adjust();
+        me.setFooter('Total', me._getColumnTotals);
+        me.update();
+    },
+
+    onDestroy: function() {
+        var me = this;
+
+        me.callParent();
+        me.un('boxready', me._initDataTable);
+        me.un('rowsChanged', me._drawRows);
+
+        if(me.table) {
+            me.table.destroy();
+            delete me.table;
+        }
+    }
+});
+                Ext.define('DataFields', {
+    fields: null,
+
+    constructor: function(columns) {
+        this.fields = columns || [{}];
+    },
+
+    _addFields: function(fields) {
+       this.fields = this.fields.concat(fields);
+    },
+
+    _removeFields: function(start, deleteCount) {
+        if (deleteCount === undefined) {
+            deleteCount = this.fields.length;
+        }
+        
+        this.fields.splice(start, deleteCount);
+    },
+
+    _toObjectKeys: function() {
+        var obj = {};
+        _.each(this.fields, function(field) {
+            obj[field.dataIndex] = null;
+        });
+
+        return obj;
+    },
+
+    _toDataColumns: function() {
+        var columns = [];
+        _.each(this.fields, function(field) {
+            columns.push({
+                data: field.dataIndex,
+                className: field.className,
+                width: field.width,
+                visible: field.visible,
+                defaultContent: ''
+            });
+        });
+
+        return columns;
+    },
+
+    _toTableHeader: function() {
+        var headers = [];
+        _.each(this.fields, function(field) {
+            headers.push('<th>' + field.text + '</th>');
+        });
+
+        return headers;
+    },
+
+    _toTableFooter: function() {
+        var footer = [];
+        _.each(this.fields, function(field) {
+            footer.push('<th></th>');
+        });
+
+        return footer;
+    }
+});
+
+            Rally.launchApp('CustomApp', {
+                name:"Dependency (One-Layer)",
+	            parentRepos:""
+            });
+
+        });
+    </script>
+
+
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.7/css/jquery.dataTables.min.css"/>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/tabletools/2.2.4/css/dataTables.tableTools.css"/>
+
+    <style type="text/css">
+        th.blue {
+  background-color: #00a9e0 !important;
+  color: white;
+}
+th.green {
+  background-color: #8dc63f !important;
+  color: white;
+}
+th.red {
+  background-color: #EE1C25 !important;
+  color: white;
+}
+.ext-risk {
+  background-color: #FF8080 !important;
+}
+.inter-risk {
+  background-color: #FFF24D !important;
+}
+.blocked-risk {
+  background-color: #FFB2B2 !important;
+}
+div.ext-risk,
+div.inter-risk,
+div.blocked-risk {
+  height: 20px;
+  width: 20px;
+}
+
+    </style>
+</head>
+<body>
+</body>
+</html>

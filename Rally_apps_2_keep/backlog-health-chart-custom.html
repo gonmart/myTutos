@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Backlog Health Chart - Custom</title>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function() {
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+
+                launch: function() {
+                    this._wait = new Ext.LoadMask(this, {});
+                    this._wait.show();
+
+                    Deft.Chain.pipeline([
+                        this._queryUnscheduledStories
+                    ], this).then({
+                        success: this._onStoriesLoad,
+                        scope: this
+                    });
+
+                    this.add({
+                        xtype: "container",
+                        html: "<table border=1>" +
+                            "<tr>" +
+                            "<td colspan=2>" + "<strong>Configuration</strong>" +
+                            "</td>" +
+                            "</tr>" +
+                            "<tr>" +
+                            "<td>" + "DoR Goal #1" +
+                            "</td>" +
+                            "<td>" + this.getSetting('DoR Goal 1') + " Points" +
+                            "</td>" +
+                            "</tr>" +
+                            "<tr>" +
+                            "<td>" + "DoR Goal #2" +
+                            "</td>" +
+                            "<td>" + this.getSetting('DoR Goal 2') + " Points" +
+                            "</td>" +
+                            "</tr>" +
+                            "</table> <br>"
+                    })
+
+                },
+
+                _queryUnscheduledStories: function() {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    Ext.create('Rally.data.wsapi.Store', {
+                        model: 'userstory',
+                        context: this.getContext().getDataContext(),
+                        fetch: ['ObjectID', 'Project', 'Name', 'c_GroomingStatus', 'Blocked', 'PlanEstimate', 'Feature', 'Parent', 'PortfolioItem'],
+                        filters: [{
+                                property: 'Children.ObjectID',
+                                value: null
+                            }, Rally.data.wsapi.Filter.or([{
+                                    property: 'Iteration',
+                                    value: null
+                                },
+                                {
+                                    property: 'Iteration.StartDate',
+                                    operator: '>=',
+                                    value: 'today'
+                                }
+                            ])
+                            /*,{
+				property: 'Iteration.TeamIteration',
+			    value: true
+			}*/
+                            ,
+                        ],
+                        sorters: [{
+                            property: 'Project.Name',
+                            direction: 'asc'
+                        }],
+                        groupField: 'Project',
+                        getGroupString: function(instance) {
+                            return instance.get('Project').Name;
+                        },
+                        limit: Infinity,
+                        pageSize: 2000,
+                        autoLoad: true,
+                        listeners: {
+                            load: function(store, records) {
+                                deferred.resolve(store);
+                            },
+                            scope: this
+                        }
+                    });
+
+                    return deferred.promise;
+                },
+
+                _onStoriesLoad: function(store) {
+                    this._wait.hide();
+
+                    var groups = store.getGroups();
+                    var groupData = {};
+
+                    var categoryProperties = {
+                        'DoR Complete': {
+                            c_GroomingStatus: 'DoR Complete',
+                            Blocked: false
+                        },
+                        'DoR Blocked': {
+                            c_GroomingStatus: 'DoR Complete',
+                            Blocked: true
+                        },
+                        'Grooming Complete': {
+                            c_GroomingStatus: 'Grooming Complete'
+                        }
+                    };
+
+
+
+
+                    var HTMLString = "<table border=1>" +
+                        "<tr>" +
+                        "<td><strong>Team </strong></td>" +
+                        "<td><strong>DoR Goal #1 Progress </strong></td>" +
+                        "<td><strong>DoR Goal #2 Progress </strong></td>" +
+                        "</tr>"
+
+                    _.each(groups, function(group) {
+                        var list = _.pluck(group.children, 'raw');
+
+                        groupData[group.name] = {};
+                        _.each(categoryProperties, function(properties, category) {
+                            groupData[group.name][category] = _.chain(list)
+                                .where(properties)
+                                .reduce(function(sum, rec) {
+                                    return sum + rec.PlanEstimate;
+                                }, 0)
+                                .value();
+                        });
+
+                        HTMLString = HTMLString +
+                            "<tr>" +
+                            "<td>" + group.name + "</td>" +
+                            "<td>" + Math.round((groupData[group.name]["DoR Complete"] / this.getSetting('DoR Goal 1')) * 100) + "%</td>" +
+                            "<td>" + Math.round((groupData[group.name]["DoR Complete"] / this.getSetting('DoR Goal 2')) * 100) + "%</td>" +
+                            "</tr>"
+
+                    }, this);
+
+                    HTMLString = HTMLString + "</table>"
+
+                    this.add({
+                        xtype: "container",
+                        html: HTMLString
+                    })
+
+
+                    var _return;
+                    var timebox = this.getContext().getTimeboxScope().getRecord();
+                    if (timebox) {
+                        _return = Rally.util.Timebox.getCounts(
+                            timebox.get('StartDate'),
+                            timebox.get('EndDate'),
+                            this.getContext().getWorkspace().WorkspaceConfiguration.WorkDays);
+                    }
+
+                    console.log(_return);
+
+                    /*this.add({
+			xtype: 'rallychart',
+			chartData: {
+				series:[{data:[_return.workdays - _return.remaining]}]
+			},
+			chartConfig: {
+				chart: {
+					type: 'bar'
+				},
+				title: {
+					text: 'Sprint Cadence'
+				},
+				xAxis: {
+					title: {
+						text: ''
+					}
+				},
+				yAxis: {
+					min: 0,
+					max: 10,
+					title: {
+						text: 'Days'
+					},
+				}
+			}
+		});
+
+*/
+
+                    this._groupData = groupData;
+                    this._addChart();
+                },
+
+                _addChart: function() {
+                    this.add({
+                        xtype: 'rallychart',
+                        chartData: this._getChartData(),
+                        chartConfig: this._getChartConfig()
+                    });
+                },
+
+                _getChartData: function() {
+                    var data = this._groupData;
+                    var series = _.reduce(data, function(map, obj) {
+                        return _.reduce(obj, function(map, val, key) {
+                            if (key in map) {
+                                map[key].push(val);
+                            } else {
+                                map[key] = [val];
+                            }
+                            return map;
+                        }, map);
+                    }, {});
+
+                    return {
+                        series: [{
+                            name: 'Grooming Complete',
+                            data: series['Grooming Complete'],
+                            color: '#ffc000'
+                        }, {
+                            name: 'DoR Blocked',
+                            data: series['DoR Blocked'],
+                            color: 'red'
+                        }, {
+                            name: 'DoR Complete',
+                            data: series['DoR Complete'],
+                            color: '#8dc63f'
+                        }],
+                        categories: Object.keys(data)
+                    };
+                },
+
+
+                getSettingsFields: function() {
+                    return [{
+                        name: 'DoR Goal 1',
+                        xtype: 'rallytextfield',
+                        type: 'number'
+                    }, {
+                        name: 'DoR Goal 2',
+                        xtype: 'rallytextfield',
+                        type: 'number'
+                    }]
+                },
+
+
+                _getChartConfig: function() {
+                    return {
+                        chart: {
+                            type: 'bar'
+                        },
+                        title: {
+                            text: 'Backlog Health'
+                        },
+                        xAxis: {
+                            title: {
+                                text: 'Teams'
+                            }
+                        },
+                        yAxis: {
+                            min: 0,
+                            max: 80,
+                            title: {
+                                text: 'Points'
+                            },
+                            plotLines: [{
+                                color: '#FF0000',
+                                width: 2,
+                                value: this.getSetting('DoR Goal 1'),
+                                zIndex: 5,
+                                label: {
+                                    text: 'DoR Goal #1'
+                                }
+                            }, {
+                                color: '#FF0000',
+                                width: 2,
+                                value: this.getSetting('DoR Goal 2'),
+                                zIndex: 5,
+                                label: {
+                                    text: 'DoR Goal #2'
+                                }
+                            }]
+                        },
+                        legend: {
+                            reversed: true
+                        },
+                        plotOptions: {
+                            series: {
+                                stacking: 'normal'
+                            }
+                        }
+                    };
+                }
+            });
+
+
+            Rally.launchApp('CustomApp', {
+                name: "Backlog Health Chart",
+                parentRepos: ""
+            });
+
+        });
+
+    </script>
+
+
+
+    <style type="text/css">
+        .app {
+            /* Add app styles here */
+        }
+
+    </style>
+</head>
+
+<body>
+
+
+</body>
+
+</html>

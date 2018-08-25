@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Iteration Scope Change v2</title>
+
+    <script type="text/javascript" src="/apps/2.0/sdk.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/r/dt/jq-2.1.4,jszip-2.5.0,pdfmake-0.1.18,dt-1.10.9,af-2.0.0,b-1.0.3,b-colvis-1.0.3,b-flash-1.0.3,b-html5-1.0.3,b-print-1.0.3,cr-1.2.0,fc-3.1.0,fh-3.0.0,sc-1.3.0,se-1.0.1/datatables.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/plug-ins/1.10.9/sorting/natural.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+
+                launch: function () {
+                    var me = this;
+                    var dropdown;
+                    var timeboxDays;
+                    var context = me.getContext();
+                    var dataAddedOrRemoved;
+                    var projectHierarchy = {};
+                    var projectScoping = [];
+
+                    var wait = new Ext.LoadMask(this, {});
+                    var datepicker = Ext.create('Rally.ui.dialog.Dialog', {
+                        title: 'Calender',
+                        closable: true,
+                        closeAction: 'hide',
+                        modal: false,
+                        focusOnToFront: false,
+                        items: {
+                            xtype: 'rallydatepicker',
+                            listeners: {
+                                select: function (cmp) {
+                                    this.fireEvent('dateselect', cmp.getValue());
+                                    datepicker.close();
+                                },
+                                scope: this
+                            }
+                        }
+                    });
+
+                    this.add(Ext.create('Ext.container.Container', {
+                        layout: 'hbox',
+                        items: [{
+                            xtype: 'rallyiterationcombobox',
+                            itemId: 'dropdown',
+                            width: '400px',
+                            fieldLabel: 'Iteration',
+                            labelAlign: 'right',
+                            listeners: {
+                                change: getTimeboxInfo,
+                                scope: this
+                            }
+                        }, {
+                            xtype: 'component',
+                            itemId: 'timeboxInfo',
+                            padding: 4
+                        }, {
+                            xtype: 'rallybutton',
+                            itemId: 'run-button',
+                            text: 'Run',
+                            handler: validateDates,
+                            margin: '0 0 0 20',
+                            scope: this
+                        }]
+                    }));
+
+                    this.add(Ext.create('Ext.container.Container', {
+                        layout: 'hbox',
+                        items: [{
+                            xtype: 'rallytextfield',
+                            itemId: 'startpickerfield',
+                            fieldLabel: 'StartDate',
+                            labelAlign: 'right',
+                            emptyText: 'MM/DD/YYYY',
+                            listeners: {
+                                focus: function (cmp) {
+                                    datepicker.showBy(cmp, null, [cmp.getLabelWidth(),
+                                        0
+                                    ]);
+                                    this.un('dateselect', onDateSelect,
+                                        this.down('#endpickerfield'));
+                                    this.on('dateselect', onDateSelect, cmp, {
+                                        single: true
+                                    });
+                                },
+                                change: function (cmp) {
+                                    datepicker.close();
+                                    if (me.down('#dt-table')) {
+                                        me.down('#dt-table').table.draw();
+                                    }
+                                },
+                                scope: this
+                            }
+                        }, {
+                            xtype: 'rallytextfield',
+                            itemId: 'endpickerfield',
+                            fieldLabel: 'EndDate',
+                            labelAlign: 'right',
+                            emptyText: 'MM/DD/YYYY',
+                            listeners: {
+                                focus: function (cmp) {
+                                    datepicker.showBy(cmp, null, [cmp.getLabelWidth(),
+                                        0
+                                    ]);
+                                    this.un('dateselect', onDateSelect,
+                                        this.down('#startpickerfield'));
+                                    this.on('dateselect', onDateSelect, cmp, {
+                                        single: true
+                                    });
+                                },
+                                change: function (cmp) {
+                                    datepicker.close();
+                                    if (me.down('#dt-table')) {
+                                        me.down('#dt-table').table.draw();
+                                    }
+                                },
+                                scope: this
+                            }
+                        }]
+                    }));
+
+                    this.add(Ext.create('Ext.container.Container', {
+                        layout: 'hbox',
+                        items: [{
+                            xtype: 'radiogroup',
+                            fieldLabel: 'Show Work',
+                            labelAlign: 'right',
+                            columns: 3,
+                            items: [{
+                                    boxLabel: 'All',
+                                    name: 'statusFilter',
+                                    inputValue: 'All',
+                                    margin: '0 5 0 5',
+                                    checked: true
+                                },
+                                {
+                                    boxLabel: 'Added',
+                                    name: 'statusFilter',
+                                    inputValue: 'Added',
+                                    margin: '0 5 0 5'
+                                },
+                                {
+                                    boxLabel: 'Removed',
+                                    name: 'statusFilter',
+                                    inputValue: 'Removed',
+                                    margin: '0 5 0 5'
+                                },
+                                {
+                                    boxLabel: 'All',
+                                    name: 'typeFilter',
+                                    inputValue: 'All',
+                                    margin: '0 5 0 5',
+                                    checked: true
+                                },
+                                {
+                                    boxLabel: 'Defects',
+                                    name: 'typeFilter',
+                                    inputValue: 'DE',
+                                    margin: '0 5 0 5'
+                                },
+                                {
+                                    boxLabel: 'Stories',
+                                    name: 'typeFilter',
+                                    inputValue: 'US',
+                                    margin: '0 5 0 5'
+                                }
+                            ],
+                            listeners: {
+                                change: function () {
+                                    if (me.down('#dt-table')) {
+                                        me.down('#dt-table').table.draw();
+                                    }
+                                }
+                            }
+                        }],
+                        renderTo: Ext.getBody().dom
+                    }));
+
+                    function getTimeboxInfo() {
+                        dropdown = me.down('#dropdown');
+                        timeboxDays = getTimeboxDays(dropdown.getRecord().get('StartDate'),
+                            dropdown.getRecord().get('EndDate'));
+                        displayTimeboxInfo(timeboxDays);
+                        //runMainQuery();
+                    }
+
+                    function getTimeboxDays(timeboxStart, timeboxEnd) {
+                        var timeboxDays = [];
+                        timeboxStart = Ext.Date.parse(timeboxStart, 'c');
+                        timeboxEnd = Ext.Date.parse(timeboxEnd, 'c');
+                        var dayNumber = 0;
+                        var dayDate;
+
+                        var daysInTimebox = dateDiff(timeboxStart, timeboxEnd);
+
+                        for (var i = 0; i < daysInTimebox; i++) {
+                            dayDate = new Date(timeboxStart.getTime());
+                            dayDate.setDate(dayDate.getDate() + i);
+                            timeboxDays[i] = dayDate;
+                        }
+
+                        return timeboxDays;
+                    }
+
+                    function displayTimeboxInfo(days) {
+                        var now = new Date();
+                        var dayCount = days.length;
+                        var endDate = timeboxDays[dayCount - 1];
+                        endDate.setHours(23, 59, 59, 0);
+
+                        var startEndDate = Ext.Date.format(timeboxDays[0], 'm/d/Y') + ' - ' + Ext.Date
+                            .format(endDate, 'm/d/Y');
+
+                        var html = '';
+                        if (now <= timeboxDays[0]) {
+                            html = startEndDate + ' (' + dayCount + ' Days, Not Started)';
+                        } else if (now <= endDate) {
+                            var dayTxt = 'Days';
+                            var daysLeft = dateDiff(endDate, now);
+                            if (daysLeft === 1) {
+                                dayTxt = 'Day';
+                            }
+                            html = startEndDate + ' (' + dayCount + ' Days, ' + daysLeft + ' ' +
+                                dayTxt + ' remaining)';
+                        } else {
+                            html = startEndDate + ' (' + dayCount + ' Days, Done)';
+                        }
+
+                        me.down('#timeboxInfo').update(html);
+                    }
+
+                    function validateDates() {
+                        var start = me.down('#startpickerfield').getValue();
+                        var end = me.down('#endpickerfield').getValue();
+
+                        var validStart = Ext.Date.parse(start, 'm/d/Y');
+                        var validEnd = Ext.Date.parse(end, 'm/d/Y');
+
+                        if ((!start || validStart) && (!end || validEnd)) {
+                            runMainQuery();
+                        }
+                    }
+
+                    function runMainQuery() {
+                        wait.show();
+
+                        Deft.Chain.pipeline([
+                            getProjectHierarchyScoping,
+                            getIterations,
+                            getRevisions
+                        ]).then({
+                            success: processMainQuery
+                        });
+                    }
+
+                    function getProjectHierarchyScoping() {
+                        return Ext.create('Rally.data.wsapi.Store', {
+                            model: 'Project',
+                            limit: Infinity,
+                            compact: false,
+                            fetch: ['Name', 'Parent']
+                        }).load();
+                    }
+
+                    function createProjectHierarchy(records) {
+                        var parentOid;
+
+                        _.each(records, function (record) {
+                            parentOid = record.get('Parent') && record.get('Parent')._ref &&
+                                Rally.util.Ref.getOidFromRef(record.get('Parent')._ref);
+                            if (parentOid) {
+                                if (!projectHierarchy[parentOid]) {
+                                    projectHierarchy[parentOid] = [];
+                                }
+                                projectHierarchy[parentOid].push(record);
+                            }
+                        });
+                    }
+
+                    function getChildren(parentRecord, children) {
+                        if (projectHierarchy[parentRecord.get('ObjectID')]) {
+                            _.each(projectHierarchy[parentRecord.get('ObjectID')], function (record) {
+                                children.push(record);
+                                getChildren(record, children);
+                            });
+                        }
+                        return children;
+                    }
+
+                    function getIterations(results) {
+                        createProjectHierarchy(results);
+
+                        selectProject = context.getProject().ObjectID;
+                        _.each(results, function (record) {
+                            if (selectProject === record.get('ObjectID')) { //find project record
+                                selectProject = record;
+                            }
+                        });
+
+                        projectScoping = _.map(getChildren(selectProject, [selectProject]),
+                            function (project) {
+                                return project.get('Name');
+                            });
+
+                        return Ext.create('Rally.data.wsapi.Store', {
+                            model: 'Iteration',
+                            context: context.getDataContext(),
+                            fetch: ['Name', 'ObjectID', 'Revisions', 'RevisionHistory'],
+                            filters: {
+                                property: 'Name',
+                                operator: '=',
+                                value: dropdown.getRecord().get('Name')
+                            }
+                        }).load();
+                    }
+
+                    function getRevisions(iterations) {
+                        var promises = [];
+
+                        var start = Ext.Date.parse(me.down('#startpickerfield').getValue(), 'm/d/Y');
+                        var end = Ext.Date.parse(me.down('#endpickerfield').getValue(), 'm/d/Y');
+                        end = end && Ext.Date.add(end, Ext.Date.DAY, 1);
+
+                        _.each(iterations, function (iteration, index) {
+                            var revisions = iteration.get('RevisionHistory').Revisions;
+                            var filterArr = [{
+                                property: 'RevisionHistory.ObjectID',
+                                operator: '=',
+                                value: Rally.util.Ref.getOidFromRef(revisions._ref)
+                            }];
+
+                            if (start) {
+                                filterArr.push({
+                                    property: 'CreationDate',
+                                    operator: '>=',
+                                    value: start
+                                });
+                            }
+                            if (end) {
+                                filterArr.push({
+                                    property: 'CreationDate',
+                                    operator: '<',
+                                    value: end
+                                });
+                            }
+
+                            var store = Ext.create('Rally.data.wsapi.Store', {
+                                model: 'Revision',
+                                context: {
+                                    project: null
+                                },
+                                fetch: true,
+                                filters: filterArr,
+                                limit: Infinity
+                            });
+                            promises.push(function () {
+                                return store.load();
+                            });
+                        });
+                        return Deft.Chain.sequence(promises);
+                    }
+
+                    function processMainQuery(results) {
+                        results = _.reduce(results, function (a, b) {
+                            return a.concat(b);
+                        });
+
+                        var timeboxRevisions = _.map(results, function (record) {
+                            return record.raw;
+                        });
+
+                        var workProductIds = parseScopeRevisions(timeboxRevisions);
+                        getWorkProducts(workProductIds);
+                    }
+
+                    function parseScopeRevisions(revisions) {
+                        var storyIds = [];
+                        var defectIds = [];
+                        var defectSuiteIds = [];
+                        var prefixes = {
+                            storyPrefix: 'US',
+                            defectPrefix: 'DE',
+                            defectSuitePrefix: 'DS',
+                            testSetPrefix: 'TS'
+                        };
+
+                        function buildIdObject() {
+                            return {
+                                //"FormattedID" : formattedIdOnly,
+                                "Status": checkSchedule(splitRevision[num]),
+                                "FormattedID": formattedIdWithPrefix,
+                                "User": revisions[i].User._refObjectName,
+                                "CreationDate": dataDate,
+                                "Description": splitRevision[num]
+                            };
+                        }
+                        for (var i = 0; i < revisions.length; i++) {
+                            var dataDate = revisions[i].CreationDate; //Ext.Date.parse(revisions[i].CreationDate, 'c');				
+                            if (/Scheduled|Unscheduled/.test(revisions[i].Description)) {
+                                var splitRevision = revisions[i].Description.split(',');
+                                for (var num = 0; num < splitRevision.length; num++) {
+                                    if (/Scheduled|Unscheduled/.test(splitRevision[num])) {
+                                        var formattedIdWithPrefix = getFormattedId(splitRevision[
+                                            num]);
+                                        if (formattedIdWithPrefix !== null) {
+                                            var formattedIdOnly = formattedIdWithPrefix.replace(
+                                                /[^0-9]/g, "");
+                                            if (formattedIdWithPrefix.indexOf(prefixes.testSetPrefix) >=
+                                                0) {
+
+                                            } else if (formattedIdWithPrefix.indexOf(prefixes.defectSuitePrefix) >=
+                                                0) {
+                                                defectSuiteIds.push(buildIdObject());
+                                            } else if (formattedIdWithPrefix.indexOf(prefixes.defectPrefix) >=
+                                                0) {
+                                                defectIds.push(buildIdObject());
+                                            } else if (formattedIdWithPrefix.indexOf(prefixes.storyPrefix) >=
+                                                0) {
+                                                storyIds.push(buildIdObject());
+                                            }
+                                        } //end if
+                                    } //end if
+                                } //end for
+                            } //end if
+                        } //end for
+
+                        return {
+                            "storyIds": storyIds,
+                            "defectIds": defectIds,
+                            "defectSuiteIds": defectSuiteIds
+                        };
+                    }
+
+                    function checkSchedule(description) {
+                        if (/Unscheduled/.test(description)) {
+                            return "Removed";
+                        }
+
+                        if (/Scheduled/.test(description)) {
+                            return "Added";
+                        }
+                    }
+
+                    function getFormattedId(description) {
+                        var artifactName = description.split("[");
+
+                        if (typeof artifactName[1] === 'undefined') {
+                            artifactName = description.split(":");
+                        }
+
+                        if (typeof artifactName[1] === 'undefined') {
+                            return null;
+                        }
+
+                        var formattedID = artifactName[1].split(":");
+                        formattedID = formattedID[0].replace(/^\s*|\s*$/g, '');
+
+                        return formattedID;
+                    }
+
+                    function getWorkProducts(workProductIds) {
+                        var storyIds = {};
+                        var defectIds = {};
+                        var defectSuiteIds = {};
+
+                        function findStoryData() {
+                            _.each(workProductIds.storyIds, function (item) {
+                                storyIds[item.FormattedID] = null;
+                            });
+
+                            var filter = buildOrFilterArray(Object.keys(storyIds), 'FormattedID');
+                            var store = buildQueryObj('HierarchicalRequirement', filter);
+                            return store.load();
+                        }
+
+                        function findDefectData() {
+                            _.each(workProductIds.defectIds, function (item) {
+                                defectIds[item.FormattedID] = null;
+                            });
+
+                            var filter = buildOrFilterArray(Object.keys(defectIds), 'FormattedID');
+                            var store = buildQueryObj('Defect', filter);
+                            return store.load();
+                        }
+
+                        function findDefectSuiteData() {
+                            _.each(workProductIds.defectSuiteIds, function (item) {
+                                defectSuiteIds[item.FormattedID] = null;
+                            });
+
+                            var filter = buildOrFilterArray(Object.keys(defectSuiteIds),
+                                'FormattedID');
+                            var store = buildQueryObj('DefectSuite', filter);
+                            return store.load();
+                        }
+
+                        Deft.Chain.sequence([
+                            findStoryData,
+                            findDefectData,
+                            findDefectSuiteData
+                        ]).then({
+                            success: function (results) {
+                                var workAddedOrRemoved = [];
+
+                                _.each(results[0], function (record) {
+                                    var collection = record.get('Successors');
+                                    collection.records = record.getCollection(
+                                        'Successors', {
+                                            fetch: ['Name', 'FormattedID',
+                                                'Project'
+                                            ]
+                                        });
+                                });
+
+                                var storiesAddedOrRemoved = buildWorkProductArr('Story',
+                                    workProductIds.storyIds, createObjectResult(
+                                        results[0]));
+                                workAddedOrRemoved = workAddedOrRemoved.concat(
+                                    storiesAddedOrRemoved);
+
+                                var defectsAddedOrRemoved = buildWorkProductArr(
+                                    'Defect', workProductIds.defectIds,
+                                    createObjectResult(results[1]));
+                                workAddedOrRemoved = workAddedOrRemoved.concat(
+                                    defectsAddedOrRemoved);
+
+                                var defectSuitesAddedOrRemoved = buildWorkProductArr(
+                                    'Defect Suite', workProductIds.defectSuiteIds,
+                                    createObjectResult(results[2]));
+                                workAddedOrRemoved = workAddedOrRemoved.concat(
+                                    defectSuitesAddedOrRemoved);
+
+                                dataAddedOrRemoved = workAddedOrRemoved.sort(function (
+                                    a, b) {
+                                    if (a.CreationDate < b.CreationDate) {
+                                        return 1;
+                                    }
+                                    if (a.CreationDate > b.CreationDate) {
+                                        return -1;
+                                    }
+                                    // a must be equal to b
+                                    return 0;
+                                });
+
+                                drawTable(dataAddedOrRemoved);
+                            }
+                        });
+                    }
+
+                    function buildOrFilterArray(artifactIds, fieldName) {
+                        var initialValue = Ext.create('Rally.data.wsapi.Filter', {
+                            property: fieldName,
+                            operator: '=',
+                            value: artifactIds[0]
+                        });
+                        return _.reduce(artifactIds.slice(1), function (filter, artifactId) {
+                            return Ext.create('Rally.data.wsapi.Filter', {
+                                property: fieldName,
+                                operator: '=',
+                                value: artifactId
+                            }).or(filter);
+                        }, initialValue);
+                    }
+
+                    function buildQueryObj(objectType, filter) {
+                        return Ext.create('Rally.data.wsapi.Store', {
+                            model: objectType,
+                            context: {
+                                workspace: me.getContext().getWorkspaceRef(),
+                                project: null
+                            },
+                            fetch: ['Name', 'ObjectID', 'FormattedID', 'Project',
+                                'Iteration', 'PlanEstimate', 'Successors'
+                            ],
+                            filters: filter,
+                            limit: Infinity,
+                            enablePostGet: true
+                        });
+                    }
+
+                    function createObjectResult(results) {
+                        var objResults = {};
+                        _.each(results, function (record) {
+                            objResults[record.get('FormattedID')] = record.raw;
+                        });
+                        return objResults;
+                    }
+
+                    function buildWorkProductArr(objectType, ids, artifacts) {
+                        return _.map(ids, function (item) {
+                            var imgUrl = '/slm/mashup/1.11/images/';
+                            var artifact = artifacts[item.FormattedID];
+
+                            if (item.Status === 'Removed') {
+                                imgUrl += 'minus.gif';
+                            } else if (item.Status === 'Added') {
+                                imgUrl += 'plus.gif';
+                            }
+                            item.img = '<img align="right" src="' + imgUrl + '"></img>';
+
+                            if (artifact) {
+                                item.FormattedIDLink = detailsLink(item.FormattedID,
+                                    artifact);
+                            } else {
+                                item.FormattedIDLink = item.FormattedID;
+                            }
+
+                            return (artifact ?
+                                Ext.apply(item, artifact) :
+                                Ext.apply(item, {
+                                    Name: '<em>Deleted ' + objectType +
+                                        '. Click for details.</em>'
+                                })
+                            );
+                        });
+                    }
+
+                    function drawTable(data) {
+                        wait.hide();
+
+                        if (me.down('#dt-table')) {
+                            me.down('#dt-table').destroy();
+                        }
+
+                        me.add(Ext.create('DataTablePanel', {
+                            itemId: 'dt-table',
+                            tableInit: {
+                                data: data,
+                                dom: 'lBf<"clear-both">prtip',
+                                buttons: [{
+                                    extend: 'collection',
+                                    text: 'Export',
+                                    buttons: ['copy', 'excel', 'print']
+                                }],
+                                //paging: false,
+                                displayLength: 100,
+                                ordering: false,
+                                scrollY: window.innerHeight - 270,
+                                scrollCollapse: true,
+                                scrollX: true,
+                                columnDefs: [{
+                                    visible: false,
+                                    targets: [0, 1]
+                                }],
+                                //order: [[ 0, 'desc' ]],
+                                drawCallback: function (settings) {
+                                    var api = this.api();
+                                    var rows = api.rows({
+                                        page: 'current'
+                                    }).nodes();
+                                    var last = null;
+                                    var span = api.columns().nodes().length;
+
+                                    api.column('.group', {
+                                        page: 'current'
+                                    }).data().each(function (group, i) {
+                                        group = Ext.Date.parse(group, 'c');
+                                        group = Ext.Date.format(group,
+                                            'l, m/d/Y');
+                                        if (last !== group) {
+                                            $(rows).eq(i).before(
+                                                '<tr class="group"><td colspan="' +
+                                                span + '">' + group +
+                                                '</td></tr>'
+                                            );
+
+                                            last = group;
+                                        }
+                                    });
+                                }
+                            },
+                            tableColumns: [{
+                                    dataIndex: 'CreationDate',
+                                    text: 'Date',
+                                    className: 'group'
+                                },
+                                {
+                                    dataIndex: 'Status',
+                                    text: 'Status'
+                                },
+                                {
+                                    dataIndex: 'img',
+                                    text: '',
+                                    width: '10%'
+                                },
+                                {
+                                    dataIndex: 'FormattedIDLink',
+                                    text: 'ID'
+                                },
+                                {
+                                    dataIndex: 'Name',
+                                    text: 'Name',
+                                    width: '50%',
+                                    className: 'details-control'
+                                },
+                                {
+                                    dataIndex: 'Iteration.Name',
+                                    text: 'Sprint'
+                                },
+                                {
+                                    dataIndex: 'Project.Name',
+                                    text: 'Project'
+                                },
+                                {
+                                    dataIndex: 'PlanEstimate',
+                                    text: 'Est'
+                                },
+                                {
+                                    dataIndex: 'User',
+                                    text: 'User'
+                                }
+                                // { dataIndex: 'Description', text: 'Description', width: '15%' }
+                            ]
+                        }));
+
+                        var table = me.down('#dt-table').table;
+
+                        tableFilterControl(table);
+                        tableDetailRows(table);
+                    }
+
+                    function tableFilterControl(table) {
+                        $.fn.dataTable.ext.search.push(
+                            function (settings, data, dataIndex) {
+                                var statusFilter = me.down('radiogroup').getValue().statusFilter;
+                                var typeFilter = me.down('radiogroup').getValue().typeFilter;
+                                var status = data[1];
+                                var type = data[3].replace(/[0-9]/g, '');
+
+                                var start = Ext.Date.parse(me.down('#startpickerfield').getValue(),
+                                    'm/d/Y');
+                                var end = Ext.Date.parse(me.down('#endpickerfield').getValue(),
+                                    'm/d/Y');
+                                end = end && Ext.Date.add(end, Ext.Date.DAY, 1);
+                                var date = Ext.Date.parse(data[0], 'c');
+
+                                if ((statusFilter === status || statusFilter === 'All') &&
+                                    (typeFilter === type || typeFilter === 'All') &&
+                                    (!start || start <= date) &&
+                                    (!end || end > date)) {
+                                    return true;
+                                }
+                                return false;
+                            }
+                        );
+                    }
+
+                    // Add event listener for opening and closing details
+                    function tableDetailRows(table) {
+                        $('#dt-table tbody').on('click', 'td.details-control', function () {
+                            var tr = $(this).closest('tr');
+                            var row = table.row(tr);
+                            var results;
+                            var mask = new Ext.LoadMask(this, {});
+
+                            function processData(results) {
+                                row.data().Snapshots = _.map(results, function (snapshot) {
+                                    return snapshot.data;
+                                });
+
+                                if (row.data().Successors) {
+                                    row.data().Successors.records.load().then({
+                                        success: openRow
+                                    });
+                                } else {
+                                    openRow();
+                                }
+                            }
+
+                            function openRow() {
+                                var html = formatDetails(row.data());
+                                row.child(html, 'child').show();
+                                tr.addClass('shown');
+                                mask.hide();
+                            }
+
+                            if (row.child.isShown()) {
+                                row.child.remove();
+                                tr.removeClass('shown');
+                            } else {
+                                mask.show();
+
+                                if (row.data().Description.indexOf('Moved to Recycle Bin') >=
+                                    0) {
+                                    results = [{
+                                        data: {
+                                            'Iteration': null,
+                                            'Project': null,
+                                            '_PreviousValues.Iteration': {
+                                                Name: dropdown.getRecord().get(
+                                                    'Name')
+                                            },
+                                            '_PreviousValues.Project': {
+                                                Name: '[unavailable]'
+                                            },
+                                            '_ValidFrom': row.data().CreationDate,
+                                            '_ValidTo': new Date().toISOString()
+                                        }
+                                    }];
+                                    processData(results);
+                                    /*getSnapshotStore({
+                                    	FormattedID: row.data().FormattedID,
+                                    	'_PreviousValues.Iteration': {$exists: true}
+                                    }).load().then({
+                                    	success: openRow
+                                    });*/
+                                } else if (row.data().Description.indexOf(
+                                        'Recovered from Recycle Bin') >= 0) {
+                                    results = [{
+                                        data: {
+                                            'Iteration': row.data().Iteration,
+                                            'Project': row.data().Project,
+                                            '_PreviousValues.Iteration': null,
+                                            '_PreviousValues.Project': null,
+                                            '_ValidFrom': row.data().CreationDate,
+                                            '_ValidTo': new Date().toISOString()
+                                        }
+                                    }];
+                                    processData(results);
+                                } else {
+                                    getSnapshotStore({
+                                        FormattedID: row.data().FormattedID,
+                                        '_PreviousValues.Iteration': {
+                                            $exists: true
+                                        }
+                                    }).load().then({
+                                        success: processData
+                                    });
+                                }
+                            }
+                        });
+                    }
+
+                    function formatDetails(rowData) {
+                        function formatSnapshot() {
+                            var sprint = dropdown.getRecord().get('Name');
+                            var formattedDesc = '';
+
+                            _.each(rowData.Snapshots, function (data, i) {
+                                var creationDate = Ext.Date.parse(rowData.CreationDate, 'c');
+                                var date = Ext.Date.format(creationDate, 'g:i A');
+                                var project = data.Project && data.Project.Name || '';
+                                var iteration = data.Iteration && data.Iteration.Name || '';
+                                var description = '';
+
+                                creationDate = Ext.Date.add(creationDate, Ext.Date.MILLI,
+                                    100);
+
+                                function buildSnapshotData() {
+                                    return '<div class="row">' +
+                                        '<div class="cell"><em>' + date + '</em></div>' +
+                                        '<div class="cell"><em>' + project + '</em></div>' +
+                                        '<div class="cell"><em>' + iteration +
+                                        '</em></div>' +
+                                        '<div class="cell"><em>' + description +
+                                        '</em></div>' +
+                                        '</div>';
+                                }
+
+                                if (data.Iteration && data.Iteration.Name === sprint &&
+                                    data.Project && projectScoping.indexOf(data.Project.Name) >=
+                                    0) {
+                                    if (!data['_PreviousValues.Iteration'] && !data[
+                                            '_PreviousValues.Project']) {
+                                        description = 'Recovered from Recycle Bin';
+                                    } else if (!data['_PreviousValues.Project'].Name) {
+                                        description = 'Added to ' + data.Iteration.Name;
+                                    } else if (data['_PreviousValues.Project'].Name) {
+                                        description = 'Added to ' + data.Project.Name;
+                                    }
+
+                                    if (rowData.Status === 'Added' && Ext.Date.parse(data._ValidTo,
+                                            'c') > creationDate && Ext.Date.parse(data._ValidFrom,
+                                            'c') <= creationDate) {
+                                        formattedDesc += description ? buildSnapshotData() :
+                                            '';
+                                    }
+                                }
+
+                                description = '';
+                                if (data['_PreviousValues.Iteration'] && data[
+                                        '_PreviousValues.Iteration'].Name === sprint) {
+                                    if (!data['_PreviousValues.Project'].Name && data.Project &&
+                                        projectScoping.indexOf(data.Project.Name) >= 0) {
+                                        description = 'Removed from ' + data[
+                                            '_PreviousValues.Iteration'].Name;
+                                    } else if (data.Project && data[
+                                            '_PreviousValues.Project'].Name &&
+                                        projectScoping.indexOf(data[
+                                            '_PreviousValues.Project'].Name) >= 0) {
+                                        description = 'Removed from ' + data[
+                                            '_PreviousValues.Project'].Name;
+                                    } else if (!data.Iteration && !data.Project) {
+                                        description = 'Moved to Recycle Bin';
+                                    }
+
+                                    if (rowData.Status === 'Removed' && Ext.Date.parse(data
+                                            ._ValidTo, 'c') > creationDate && Ext.Date.parse(
+                                            data._ValidFrom, 'c') <= creationDate) {
+                                        formattedDesc += description ? buildSnapshotData() :
+                                            '';
+                                    }
+                                }
+                            });
+
+                            return '<div class="table snapshot">' +
+                                '<div class="row">' +
+                                '<div class="cell">Updated</div>' +
+                                '<div class="cell">Project</div>' +
+                                '<div class="cell">Iteration</div>' +
+                                '<div class="cell">Description</div>' +
+                                '</div>' +
+                                formattedDesc +
+                                '</div>';
+                        }
+
+                        function formatSuccessors() {
+                            if (!rowData.Successors || rowData.Successors.Count <= 0) {
+                                return '';
+                            }
+
+                            var formattedSucc = '';
+                            _.each(rowData.Successors.records.data.items, function (succ) {
+                                var id = succ.get('FormattedID');
+                                var name = succ.get('Name');
+                                var project = succ.get('Project').Name;
+
+                                function buildSuccessorData() {
+                                    return '<div class="row">' +
+                                        '<div class="cell"><em>' + id + '</em></div>' +
+                                        '<div class="cell"><em>' + name + '</em></div>' +
+                                        '<div class="cell"><em>' + project + '</em></div>' +
+                                        '</div>';
+                                }
+
+                                formattedSucc += buildSuccessorData();
+                            });
+
+                            return '<div class="table successors">' +
+                                '<div class="row">' +
+                                '<div class="cell">Successor ID</div>' +
+                                '<div class="cell">Name</div>' +
+                                '<div class="cell">Project</div>' +
+                                '</div>' +
+                                formattedSucc +
+                                '</div>';
+                        }
+
+                        return formatSnapshot() + formatSuccessors();
+                    }
+
+                    function getSnapshotStore(find) {
+                        var store = Ext.create('Rally.data.lookback.SnapshotStore', {
+                            context: context.getDataContext(),
+                            fetch: [
+                                'Iteration',
+                                'Project',
+                                'Name',
+                                'FormattedID',
+                                'PlanEstimate',
+                                '_PreviousValues.Iteration',
+                                '_PreviousValues.Project',
+                                'Successors'
+                            ],
+                            hydrate: ['Iteration', 'Project', '_PreviousValues.Iteration',
+                                '_PreviousValues.Project'
+                            ],
+                            find: find,
+                            sort: {
+                                _ValidFrom: -1
+                            },
+                            limit: Infinity,
+                            pageSize: 200,
+                            useHttpPost: true
+                        });
+
+                        return {
+                            load: function () {
+                                var deferred = Ext.create('Deft.Deferred');
+                                store.load({
+                                    callback: function (result) {
+                                        deferred.resolve(result);
+                                    },
+                                    scope: this
+                                });
+
+                                return deferred.promise;
+                            }
+                        };
+                    }
+
+                    function dateDiff(date1, date2) {
+                        return Math.round(Ext.Date.getElapsed(date1, date2) / (1000 * 60 * 60 * 24));
+                    }
+
+                    function onDateSelect(value) {
+                        this.setValue(Ext.Date.format(value, 'm/d/Y'));
+                    }
+
+                    function detailsLink(item, rec) {
+                        var url = Rally.nav.Manager.getDetailUrl(rec._ref);
+                        return '<a href="' + url + '" target="_blank">' + item + '</a>';
+                    }
+                }
+            });
+            Ext.define('DataTablePanel', {
+                extend: 'Ext.Panel',
+
+                manageHeight: false,
+                itemId: null,
+                fields: null,
+                tpl: null,
+                table: null,
+                footer: false,
+                width: window.innerWidth - 18,
+
+                constructor: function (config) {
+                    var me = this,
+                        thead = '',
+                        tfoot = '';
+
+                    me.mergeConfig(config);
+                    me.callParent();
+
+                    me.fields = Ext.create('DataFields', me.tableColumns);
+                    me.tplData = {
+                        id: me.itemId,
+                        cls: 'compact hover row-border nowrap',
+                        attr: 'width="100%"',
+                        header: [{
+                            th: me.fields._toTableHeader()
+                        }]
+                    };
+
+                    if (me.groupColumns) {
+                        var tr = {
+                                th: []
+                            },
+                            tpl = new Ext.Template(
+                                '<th class="{className}" colspan="{span}">{group}</th>');
+
+                        _.each(me.groupColumns, function (item) {
+                            tr.th.push(tpl.apply(item));
+                        });
+
+                        me.tplData.header.unshift(tr);
+                    }
+
+                    if (me.footer) {
+                        me.tplData = Ext.apply({
+                            footer: me.fields._toTableFooter()
+                        }, me.tplData);
+
+                        tfoot = '<tfoot><tr><tpl for="footer">{.}</tpl></tr></tfoot>';
+                    }
+
+                    thead =
+                        '<thead><tpl for="header"><tr><tpl for="th">{.}</tpl></tr></tpl></thead>';
+                    me.tpl = new Ext.XTemplate(
+                        '<table id="{id}" class="{cls}" {attr}>',
+                        thead,
+                        tfoot,
+                        '</table>',
+                        '<br>'
+                    );
+                },
+
+                initComponent: function () {
+                    var me = this;
+
+                    me.callParent();
+
+                    me.on('boxready', me._initDataTable);
+                    me.on('rowsChanged', me._drawRows);
+                },
+
+                _initDataTable: function () {
+                    var me = this;
+
+                    me.tpl.overwrite(me.body, me.tplData);
+                    me.tableInit.columns = me.fields._toDataColumns();
+
+                    var init = Ext.apply({
+                        destroy: true
+                    }, me.tableInit);
+
+                    var selector = '#' + me.itemId;
+                    me.table = $(selector).DataTable(init);
+                    me.update();
+                },
+
+                setTableData: function (data) {
+                    var me = this;
+                    var row = me.fields._toObjectKeys();
+
+                    me.fireEvent('rowsChanged', data);
+                },
+
+                setFooter: function (name, footerFn) {
+                    var me = this;
+
+                    if (me.footer) {
+                        var column = me.table.column(0);
+                        $(column.footer()).html(name);
+
+                        footerFn(me.table);
+                    }
+                },
+
+                addColumns: function (columns) {
+                    var me = this;
+
+                    if (me.groupColumns) {
+                        return;
+                    }
+
+                    me.fields._addFields(columns);
+                    me.tplData.header = [{
+                        th: me.fields._toTableHeader()
+                    }];
+
+                    if (me.footer) {
+                        me.tplData.footer = me.fields._toTableFooter();
+                    }
+
+                    me._initDataTable();
+                },
+
+                removeColumns: function (start, deleteCount) {
+                    var me = this;
+
+                    if (me.groupColumns) {
+                        return;
+                    }
+
+                    me.fields._removeFields(start, deleteCount);
+                    me.tplData.header = [{
+                        th: me.fields._toTableHeader()
+                    }];
+
+                    if (me.footer) {
+                        me.tplData.footer = me.fields._toTableFooter();
+                    }
+
+                    me._initDataTable();
+                },
+
+                addFooterFilters: function () {
+                    var me = this;
+
+                    if (me.footer) {
+                        me.table.columns().every(function () {
+                            var column = this;
+                            var select = $('<select><option value=""></option></select>')
+                                .appendTo($(column.footer()).empty())
+                                .on('change', function () {
+                                    var val = $.fn.dataTable.util.escapeRegex(
+                                        $(this).val()
+                                    );
+
+                                    column
+                                        .search(val ? '^' + val + '$' : '', true, false)
+                                        .draw();
+                                });
+
+                            column.data().unique().sort().each(function (d, j) {
+                                select.append('<option value="' + d + '">' + d +
+                                    '</option>');
+                            });
+                        });
+                    }
+                },
+
+                _drawRows: function (data) {
+                    var me = this;
+
+                    me.table.clear();
+                    me.table.rows.add(data).draw();
+                    me.table.columns.adjust();
+                    me.update();
+                },
+
+                onDestroy: function () {
+                    var me = this;
+
+                    me.callParent();
+                    me.un('boxready', me._initDataTable);
+                    me.un('rowsChanged', me._drawRows);
+
+                    if (me.table) {
+                        me.table.destroy();
+                        delete me.table;
+                    }
+                }
+            });
+            Ext.define('DataFields', {
+                fields: null,
+
+                constructor: function (columns) {
+                    this.fields = columns || [{}];
+                },
+
+                _addFields: function (fields) {
+                    this.fields = this.fields.concat(fields);
+                },
+
+                _removeFields: function (start, deleteCount) {
+                    if (deleteCount === undefined) {
+                        deleteCount = this.fields.length;
+                    }
+
+                    this.fields.splice(start, deleteCount);
+                },
+
+                _toObjectKeys: function () {
+                    var obj = {};
+                    _.each(this.fields, function (field) {
+                        obj[field.dataIndex] = null;
+                    });
+
+                    return obj;
+                },
+
+                _toDataColumns: function () {
+                    var columns = [];
+                    _.each(this.fields, function (field) {
+                        columns.push({
+                            data: field.dataIndex,
+                            className: field.className,
+                            width: field.width,
+                            visible: field.visible,
+                            defaultContent: ''
+                        });
+                    });
+
+                    return columns;
+                },
+
+                _toTableHeader: function () {
+                    var headers = [];
+                    _.each(this.fields, function (field) {
+                        headers.push('<th>' + field.text + '</th>');
+                    });
+
+                    return headers;
+                },
+
+                _toTableFooter: function () {
+                    var footer = [];
+                    _.each(this.fields, function (field) {
+                        footer.push('<th></th>');
+                    });
+
+                    return footer;
+                }
+            });
+
+            Rally.launchApp('CustomApp', {
+                name: "Iteration Scope Change v2",
+                parentRepos: ""
+            });
+
+        });
+    </script>
+
+
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/r/dt/jq-2.1.4,jszip-2.5.0,pdfmake-0.1.18,dt-1.10.9,af-2.0.0,b-1.0.3,b-colvis-1.0.3,b-flash-1.0.3,b-html5-1.0.3,b-print-1.0.3,cr-1.2.0,fc-3.1.0,fh-3.0.0,sc-1.3.0,se-1.0.1/datatables.min.css"
+    />
+
+    <style type="text/css">
+        th {
+            text-align: left;
+        }
+
+        div.dt-buttons {
+            float: right;
+            margin-left: 5px;
+            vertical-align: top;
+        }
+
+        div.dt-button-background {
+            opacity: .05;
+        }
+
+        div.dt-button-collection {
+            width: 70px;
+        }
+
+        td.large {
+            text-align: center;
+            font-size: 24px;
+        }
+
+        tfoot th.title {
+            text-align: right;
+        }
+
+        .lbl,
+        .radio-lbl {
+            font-size: 13px;
+            text-align: left;
+            vertical-align: bottom;
+        }
+
+        tr.group {
+            background-color: #A3C8FF !important;
+        }
+
+        .child {
+            background-color: #F6F6F6 !important;
+        }
+
+        .child:hover {
+            background-color: #F3F3F3 !important;
+        }
+
+        div.table {
+            display: inline-table;
+        }
+
+        div.row {
+            display: table-row;
+        }
+
+        div.cell {
+            display: table-cell;
+            padding: 4px;
+        }
+
+        .clear {
+            float: right;
+            clear: right;
+        }
+
+        div.successors {
+            padding-left: 30px;
+            border-left: 1px solid;
+        }
+
+        div.snapshot {
+            padding-left: 10%;
+            padding-right: 30px;
+        }
+
+        div.clear-both {
+            clear: both;
+        }
+    </style>
+</head>
+
+<body>
+</body>
+
+</html>

@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Blocked Length Report</title>
+
+    <script type="text/javascript" src="/apps/2.0/sdk.js"></script>
+    <script type="text/javascript" src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/1.10.7/js/jquery.dataTables.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/tabletools/2.2.4/js/dataTables.tableTools.min.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function() {
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+                items: [{
+                        xtype: 'container',
+                        itemId: 'settings-box',
+                        layout: 'hbox'
+                    },
+                    {
+                        xtype: 'container',
+                        itemId: 'display-box'
+                    }
+                ],
+                launch: function() {
+                    this.pleaseWait = new Ext.LoadMask(this, {});
+
+                    this.down('#settings-box').add([{
+                        xtype: 'fieldcontainer',
+                        margin: '10, 0, 10, 0',
+                        bodyPadding: 3,
+                        defaultType: 'checkboxfield',
+                        layout: 'hbox',
+                        items: [{
+                            boxLabel: 'Show History',
+                            padding: '0, 0, 0, 20',
+                            id: 'history-checkbox',
+                            value: false,
+                            handler: function() {
+                                var data = this._customData;
+                                this._processSnapShots(data);
+                            },
+                            scope: this
+                        }]
+                    }]);
+
+                    this.down('#display-box').add(this._DataTable.getPanel());
+
+                    this._DataTable.add('Blocker Table', this._buildTable());
+
+                    this._getTimeboxScope();
+                },
+
+                onTimeboxScopeChange: function(timeboxScope) {
+                    this._getTimeboxScope(timeboxScope);
+                },
+
+                _getTimeboxScope: function(timeboxScope) {
+                    if (!timeboxScope) {
+                        timeboxScope = this.getContext().getTimeboxScope();
+                    }
+
+                    if (timeboxScope && timeboxScope.getRecord()) {
+                        this.timebox = timeboxScope.getRecord();
+                        this._launch();
+                    } else {
+                        alert('Please select an Iteration (not "Unscheduled")');
+                    }
+                },
+
+                _launch: function() {
+                    this.pleaseWait.show();
+
+                    this._loadWorkItems();
+                },
+
+                _loadWorkItems: function() {
+                    Ext.create('Rally.data.wsapi.artifact.Store', {
+                        models: ['UserStory', 'Defect'],
+                        context: this.getContext().getDataContext(),
+                        fetch: ['ObjectID'],
+                        filters: {
+                            property: 'Iteration.Name',
+                            operator: '=',
+                            value: this.timebox.get('Name')
+                        },
+                        limit: Infinity,
+                        autoLoad: true,
+                        listeners: {
+                            load: this._queryBlockerHistory,
+                            scope: this
+                        }
+                    });
+                },
+
+                _queryBlockerHistory: function(store, data) {
+                    var workitems = _.map(data, function(item) {
+                        return item.get('ObjectID');
+                    });
+
+                    var queryBlockerHistory = function() {
+                        return this._getSnapshots(workitems);
+                    };
+
+                    Deft.Chain.pipeline([
+                        queryBlockerHistory
+                    ], this).then({
+                        success: function(results) {
+                            var data = this._removeDup(results);
+                            this._customData = data;
+                            this._processSnapShots(data);
+
+                            this.pleaseWait.hide();
+                        },
+                        scope: this
+                    });
+                },
+
+                _getSnapshots: function(workitems) {
+                    var promises = [];
+
+                    var pageSize = 200,
+                        startIndex = 0,
+                        len = workitems.length;
+
+                    for (; startIndex < len; startIndex += pageSize) {
+                        var items = workitems.slice(startIndex, startIndex + 200);
+                        var store = this._getSnapshotStore(items);
+                        var promise = this._getPromise(store);
+
+                        promises.push(promise);
+                    }
+
+                    return Deft.Promise.reduce(promises, function(prev, cur) {
+                        return prev.concat(cur);
+                    }, []);
+                },
+
+                _getSnapshotStore: function(workitems) {
+                    return Ext.create('Rally.data.lookback.SnapshotStore', {
+                        context: this.getContext().getDataContext(),
+                        fetch: [
+                            'ObjectID',
+                            'FormattedID',
+                            'Name',
+                            'Blocked',
+                            'BlockedReason',
+                            'PlanEstimate',
+                            'Iteration',
+                            'Project',
+                            '_id',
+                            '_ValidFrom',
+                            '_ValidTo',
+                            '_PreviousValues.Blocked',
+                            '_PreviousValues.BlockedReason',
+                            '_RevisionNumber',
+                            'c_CodeName'
+                        ],
+                        hydrate: ['Iteration', 'Project'],
+                        sort: {
+                            _ValidFrom: 1
+                        },
+                        find: {
+                            _TypeHierarchy: {
+                                $in: ['HierarchicalRequirement', 'Defect']
+                            },
+                            Children: null,
+                            _ItemHierarchy: {
+                                $in: workitems
+                            },
+                            _ProjectHierarchy: this.getContext().getProject().ObjectID,
+                            $or: [{
+                                    '_RevisionNumber': 0,
+                                    'Blocked': true
+                                }, // state initially blocked
+                                {
+                                    '_PreviousValues.Blocked': false,
+                                    'Blocked': true
+                                }, // state changed to blocked
+                                {
+                                    '_PreviousValues.Blocked': true,
+                                    'Blocked': false
+                                }, // state changed to unblocked
+                                {
+                                    '_PreviousValues.BlockedReason': {
+                                        $exists: true
+                                    },
+                                    'BlockedReason': {
+                                        $ne: null
+                                    }
+                                }, // get all changes in blocked reason
+                                {
+                                    __At: 'current',
+                                    'Blocked': true
+                                } // current state blocked regardless of state change
+                            ]
+                        },
+                        limit: Infinity
+                    });
+                },
+
+                _processSnapShots: function(data) {
+                    var iteration = this.timebox.get('Name');
+                    var artifactArray = {};
+                    var blockerTableArray = [];
+
+                    var getBlockedLength = function(start, end) {
+                        start = Ext.Date.parse(start, 'c');
+                        end = Ext.Date.parse(end, 'c');
+                        return Ext.Date.getElapsed(start, end) / (1000 * 60 * 60 * 24); // convert to days
+                    };
+
+                    var getDetailUrl = function(rec) {
+                        var oid = rec.get('ObjectID');
+                        var prefix = rec.get('FormattedID').substr(0, 2);
+                        var type = {
+                            'US': 'userstory',
+                            'DE': 'defect'
+                        };
+                        return 'https://rally1.rallydev.com/#/detail/' + type[prefix] + '/' + oid;
+                    }
+
+                    _.each(data, function(item) {
+                        var formattedID = item.get('ObjectID');
+                        artifactArray[formattedID] = artifactArray[formattedID] || {};
+                        artifactArray[formattedID].items = artifactArray[formattedID].items || [];
+                        artifactArray[formattedID].items.push(item);
+                    });
+
+                    _.each(artifactArray, function(artifact, artifactID) {
+                        artifact.blockers = [];
+                        var start = null;
+                        var end = null;
+                        var reason = [];
+
+                        _.each(artifact.items, function(item) {
+                            var prevBlocked = item.get('_PreviousValues.Blocked');
+                            var blocked = item.get('Blocked');
+                            var today = new Date().toISOString();
+                            var current = item.get('_ValidTo') > today;
+
+                            var blockerData = {
+                                Name: '<a href="' + getDetailUrl(item) + '" target="_blank">' + item.get('FormattedID') + '</a>',
+                                Iteration: item.get('Iteration') && item.get('Iteration').Name || '',
+                                Project: item.get('Project').Name,
+                                PlanEstimate: item.get('PlanEstimate'),
+                                CodeName: item.get('c_CodeName')
+                            };
+
+                            var round10 = this._round10;
+
+                            var addToBlockerArray = function(start, end, reason) {
+                                var length = getBlockedLength(start, end);
+                                var threshold = 1 / 24; // days
+
+                                start = Ext.Date.format(Ext.Date.parse(start, 'c'), 'Y-m-d\\TH:iO');
+                                if (end === today) {
+                                    end = null;
+                                } else {
+                                    end = Ext.Date.format(Ext.Date.parse(end, 'c'), 'Y-m-d\\TH:iO');
+                                }
+
+                                if (length > threshold) {
+                                    artifact.blockers.push(Ext.apply(blockerData, {
+                                        BlockedReason: reason.pop() || null,
+                                        BlockedStart: start,
+                                        BlockedEnd: end,
+                                        BlockedLength: round10(length)
+                                    }));
+                                }
+                            };
+
+                            if (blocked) {
+                                start = start || item.get('_ValidFrom');
+                                reason.push(item.get('BlockedReason'));
+
+                                if (current) {
+                                    end = today;
+
+                                    addToBlockerArray(start, end, reason);
+
+                                    start = null;
+                                    end = null;
+                                    reason = [];
+                                }
+                            } else {
+                                end = item.get('_ValidFrom');
+                                if (Ext.getCmp('history-checkbox').getValue()) {
+                                    addToBlockerArray(start, end, reason);
+                                }
+                                start = null;
+                                end = null;
+                                reason = [];
+                            }
+                        }, this);
+                    }, this);
+
+                    _.each(artifactArray, function(artifact, artifactID) {
+                        blockerTableArray = blockerTableArray.concat(artifact.blockers);
+                    });
+
+                    this._DataTable.get('Blocker Table').data = blockerTableArray;
+
+                    this._DataTable.display();
+                    this._highlightRows();
+                },
+
+                _buildTable: function() {
+                    return this._dataTableBuilder({
+                        data: {
+                            id: 'blocked-table',
+                            cls: 'display compact'
+                        },
+
+                        fields: [{
+                                property: 'Name',
+                                columnName: 'Artifact Name'
+                            },
+                            {
+                                property: 'Iteration',
+                                columnName: 'Iteration'
+                            },
+                            {
+                                property: 'PlanEstimate',
+                                columnName: 'Plan Estimate'
+                            },
+                            {
+                                property: 'Project',
+                                columnName: 'Project'
+                            },
+                            {
+                                property: 'CodeName',
+                                columnName: 'Code Name'
+                            },
+                            {
+                                property: 'BlockedLength',
+                                columnName: 'Blocked Length (in days)'
+                            },
+                            {
+                                property: 'BlockedStart',
+                                columnName: 'Blocked Start'
+                            },
+                            {
+                                property: 'BlockedEnd',
+                                columnName: 'Blocked End'
+                            },
+                            {
+                                property: 'BlockedReason',
+                                columnName: 'Blocked Reason'
+                            },
+                        ],
+
+                        table: {
+                            scrollY: 300,
+                            scrollCollapse: true,
+                            dom: 'T<"clear">lfrtip',
+                            tableTools: {
+                                "sSwfPath": "https://cdn.datatables.net/tabletools/2.2.2/swf/copy_csv_xls_pdf.swf"
+                            },
+                            order: [
+                                [5, 'desc']
+                            ]
+                        }
+                    });
+                },
+
+                _dataTableBuilder: function(config) {
+                    var fields = new this._dataFields(config.fields);
+                    config.data.columns = [{
+                        th: fields.toTableColumns()
+                    }];
+                    config.table.columns = fields.toDataColumns();
+
+                    if (config.groupColumns) {
+                        var tr = {
+                                th: []
+                            },
+                            tpl = new Ext.Template('<th colspan="{span}">{group}</th>');
+
+                        _.each(config.groupColumns, function(item) {
+                            tr.th.push(tpl.apply(item));
+                        });
+
+                        config.data.columns.unshift(tr);
+                    }
+
+                    return {
+                        data: config.data,
+                        fields: fields,
+                        init: config.table
+                    };
+                },
+
+                _dataFields: function(names) {
+                    var fields = names || [];
+
+                    return {
+                        get: function() {
+                            return fields;
+                        },
+
+                        set: function(arr) {
+                            fields = arr;
+                        },
+
+                        toObjectKeys: function() {
+                            var obj = {};
+                            _.each(fields, function(field) {
+                                obj[field.property] = null;
+                            });
+
+                            return obj;
+                        },
+
+                        toDataColumns: function() {
+                            var columns = [];
+                            _.each(fields, function(field) {
+                                columns.push({
+                                    data: field.property
+                                });
+                            });
+
+                            return columns;
+                        },
+
+                        toTableColumns: function() {
+                            var columns = [];
+                            _.each(fields, function(field) {
+                                columns.push('<th>' + field.columnName + '</th>');
+                            });
+
+                            return columns;
+                        }
+                    };
+                },
+
+                _DataTable: (function() {
+                    var dataTable = {};
+                    var defaults = {
+                        table: {},
+                        fields: {},
+                        data: []
+                    };
+
+                    var tpl = new Ext.XTemplate(
+                        '<table id="{id}" class="{cls}" {attr}>',
+                        '<thead>',
+                        '<tpl for="columns"><tr>',
+                        '<tpl for="th">{.}</tpl>',
+                        '</tr></tpl>',
+                        '</thead>',
+                        '</table>',
+                        '<br>'
+                    );
+
+                    var panel = new Ext.create('Ext.panel.Panel', {
+                        itemId: 'data-table-panel',
+                        tpl: tpl,
+                        manageHeight: false
+                    });
+
+                    return {
+                        add: function(name, dt) {
+                            if (_.keys(dataTable).length === 0) {
+                                tpl.overwrite(panel.body, dt.data);
+                            } else {
+                                tpl.append(panel.body, dt.data);
+                            }
+
+                            var selector = '#' + dt.data.id,
+                                table = $(selector).DataTable(dt.init);
+
+                            dataTable[name] = Ext.apply({}, {
+                                table: table,
+                                fields: dt.fields
+                            }, defaults);
+                        },
+
+                        get: function(name) {
+                            if (name === undefined) {
+                                return dataTable;
+                            }
+
+                            return dataTable[name];
+                        },
+
+                        getPanel: function() {
+                            return panel;
+                        },
+
+                        display: function() {
+                            _.each(dataTable, function(dt) {
+                                dt.table.clear();
+                                dt.table.rows.add(dt.data).draw();
+                                dt.table.columns.adjust();
+                            });
+                        }
+                    };
+                })(),
+
+                _getPromise: function(store) {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    store.load({
+                        callback: function(result) {
+                            deferred.resolve(result);
+                        },
+                        scope: this
+                    });
+
+                    return deferred.promise;
+                },
+
+                _removeDup: function(array) {
+                    _.each(array, function(item, index) {
+                        var i = index + 1,
+                            len = array.length;
+                        for (; i < len && array[i]; i++) {
+                            if (item.get('_id') === array[i].get('_id')) {
+                                array.splice(i, 1);
+                                len--;
+                            }
+                        }
+                    });
+                    return array;
+                },
+
+                _round10: function(value) {
+                    if (isNaN(value)) {
+                        return '';
+                    }
+
+                    return +(Math.round(value + 'e+1') + 'e-1') + '';
+                },
+
+                _highlightRows: function() {
+                    var table = this._DataTable.get('Blocker Table').table;
+                    var selectRows = table.rows().eq(0).filter(function(index) {
+                        return table.cell(index, 5).data() >= 1 && table.cell(index, 7).data() === null;
+                    });
+
+                    selectRows.each(function(value) {
+                        table.rows(value)
+                            .nodes()
+                            .to$()
+                            .addClass('blocker-highlight');
+                    });
+
+                    table.draw();
+                }
+            });
+
+            Rally.launchApp('CustomApp', {
+                name: "Blocked Length Report",
+                parentRepos: ""
+            });
+
+        });
+
+    </script>
+
+
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.7/css/jquery.dataTables.min.css" />
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/tabletools/2.2.4/css/dataTables.tableTools.css" />
+
+    <style type="text/css">
+        .blocker-highlight {
+            font-weight: bold;
+            color: #ee1c25;
+        }
+
+    </style>
+</head>
+
+<body>
+</body>
+
+</html>

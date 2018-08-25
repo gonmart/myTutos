@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>estimation-calibration</title>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.TimeboxScopedApp',
+                scopeType: 'release',
+                getSettingsFields: function () {
+                    return [{
+                            name: 'includeStories',
+                            xtype: 'rallycheckboxfield',
+                            fieldLabel: '',
+                            boxLabel: 'Include stories in calibration'
+                        },
+                        {
+                            name: 'includeDefects',
+                            xtype: 'rallycheckboxfield',
+                            fieldLabel: '',
+                            boxLabel: 'Include defects in calibration'
+                        }
+                    ];
+                },
+                config: {
+                    defaultSettings: {
+                        includeStories: true,
+                        includeDefects: false
+                    }
+                },
+                OUTLIER_THRESHOLD: 1.5,
+                app: null,
+                filterContainer: null,
+                contentContainer: null,
+                scatterChart: null,
+                boxPlotChart: null,
+                firstLaunch: false,
+
+                launch: function () {
+                    app = this;
+                    // Track if this is the first launch so we should auto-load from prefs
+                    app.firstLaunch = true;
+                    filterContainer = app.down('container');
+                    contentContainer = app.add({
+                        xype: 'box',
+                        border: 0
+                    });
+                    app.callParent(arguments);
+                },
+
+                // If the scope changes, such as the release filter, update ourselves
+                onScopeChange: function (scope) {
+                    app.callParent(arguments);
+                    app.initializeFilters();
+                },
+
+                // Set up filters, if needed
+                initializeFilters: function () {
+                    app.hideHeader(false);
+
+                    // Show start and end data filters if we're not on a release-filtered page
+                    // The filter container will be automatically added by the app if we're not on a release-filtered page
+                    if (filterContainer) {
+                        var fromDateFieldId = 'fromDateFilter';
+                        var toDateFieldId = 'toDateFilter';
+                        var beginButtonId = 'beginButton';
+
+                        var fromDateField = filterContainer.down('#' + fromDateFieldId);
+                        var toDateField = filterContainer.down('#' + toDateFieldId);
+                        var beginButton = filterContainer.down('#' + beginButtonId);
+
+                        if (!toDateField) {
+                            filterContainer.add({
+                                xtype: 'label',
+                                html: '--or--<br/>'
+                            });
+
+                            fromDateField = filterContainer.add({
+                                xtype: 'datefield',
+                                anchor: '100%',
+                                fieldLabel: 'From',
+                                itemId: fromDateFieldId,
+                                name: 'from_date',
+                                stateful: true,
+                                stateId: app.getContext().getScopedStateId('fromDate')
+                            });
+
+                            toDateField = filterContainer.add({
+                                xtype: 'datefield',
+                                anchor: '100%',
+                                fieldLabel: 'To',
+                                itemId: toDateFieldId,
+                                name: 'to_date',
+                                stateful: true,
+                                stateId: app.getContext().getScopedStateId('toDate')
+                            });
+
+                            filterContainer.add({
+                                xtype: 'rallybutton',
+                                itemId: beginButtonId,
+                                text: 'Apply Date Range',
+                                handler: function () {
+                                    app.beginButtonHandler(fromDateField, toDateField);
+                                },
+                                style: {
+                                    'background-color': '#61257a',
+                                    'border-color': '#61257a'
+                                }
+                            });
+
+                            // Don't make the user click the Begin button the first time if there are saved values
+                            if (app.firstLaunch && (fromDateField.value || toDateField.value || app
+                                    .getContext().getTimeboxScope().getRecord())) {
+                                app.firstLaunch = false;
+                                app.beginButtonHandler(fromDateField, toDateField);
+                            }
+                        }
+                    } else {
+                        app.beginButtonHandler(null, null);
+                    }
+                },
+
+                // Use the from date, to date, and scope to determine the time range for the chart
+                beginButtonHandler: function (fromDateField, toDateField) {
+                    app.clearContent(false);
+
+                    var scope = app.getContext().getTimeboxScope().getRecord();
+                    var fromDate = null;
+                    if (fromDateField) {
+                        if (fromDateField.value) {
+                            fromDate = fromDateField.value;
+                        }
+                    }
+                    if (!fromDate && scope) {
+                        fromDate = scope.get('ReleaseStartDate');
+                    }
+
+                    var toDate = null;
+                    if (toDateField) {
+                        if (toDateField.value) {
+                            toDate = toDateField.value;
+                        }
+                    }
+                    if (!toDate && scope) {
+                        toDate = scope.get('ReleaseDate');
+                    }
+
+                    app.fetchWorkItems(fromDate, toDate);
+                },
+
+                // Collect the stories that were accepted within the timebox
+                fetchWorkItems: function (startDate, endDate) {
+                    // Show loading message
+                    app._myMask = new Ext.LoadMask(Ext.getBody(), {
+                        msg: "Calculating... Please wait."
+                    });
+                    app._myMask.show();
+
+                    // Look for stories that were started and accepted within the release timebox	
+                    var filters = [];
+
+                    if (startDate) {
+                        var startDateFilter = Ext.create('Rally.data.wsapi.Filter', {
+                            property: 'InProgressDate',
+                            operator: '>=',
+                            value: startDate
+                        });
+                        filters.push(startDateFilter);
+                    }
+
+                    if (endDate) {
+                        var endDateFilter = Ext.create('Rally.data.wsapi.Filter', {
+                            property: 'AcceptedDate',
+                            operator: '<=',
+                            value: endDate
+                        });
+                        filters.push(endDateFilter);
+
+                    }
+
+                    var estimateFilter = Ext.create('Rally.data.wsapi.Filter', {
+                        property: 'PlanEstimate',
+                        operator: '>',
+                        value: '0'
+                    });
+                    filters.push(estimateFilter);
+
+                    // Create a lookup by estimate for the stories of that estimate
+                    var estimateTimes = {};
+
+                    // TODO: Have a change to settings regenerate the chart
+                    if (this.getSetting('includeStories')) {
+                        app.fetchCycleTimes(filters, 'UserStory', estimateTimes);
+                    } else if (this.getSetting('includeDefects')) {
+                        app.fetchCycleTimes(filters, 'Defect', estimateTimes);
+                    } else {
+                        // If neither stories nor defects are selected, there's nothing else to do
+                        app.showMessage(
+                            'Please use the app\'s settings to display at least stories or defects.'
+                        );
+                    }
+                },
+
+                // Organize the data for the cycle times by estimate scatter chart
+                fetchCycleTimes: function (filters, model, estimateTimes) {
+                    var store = Ext.create(
+                        'Rally.data.wsapi.Store', {
+                            model: model,
+                            fetch: ['FormattedID', 'Name', 'InProgressDate', 'AcceptedDate',
+                                'PlanEstimate'
+                            ],
+                            context: app.getContext().getDataContext(),
+                            pageSize: 2000,
+                            limit: 2000,
+                            sorters: [{
+                                property: 'PlanEstimate',
+                                direction: 'ASC'
+                            }]
+                        },
+                        app
+                    );
+
+                    store.addFilter(filters, false);
+                    // TODO: If there are over 2000 work items, we would need to fetch a second page (or more)
+                    store.loadPage(1, {
+                        scope: app,
+                        callback: function (records, operation) {
+                            if (operation.wasSuccessful()) {
+                                _.each(records, function (record) {
+                                    if (record.data.InProgressDate !== null &&
+                                        record.data.AcceptedDate !== null) {
+                                        estimateEntry = {};
+                                        estimateEntry.estimate = Number(record.data
+                                            .PlanEstimate);
+                                        estimateEntry.id = record.data.FormattedID;
+                                        estimateEntry.name = record.data.Name;
+                                        estimateEntry.ref = record.data._ref;
+                                        estimateEntry.cycleTime = app.countWeekDays(
+                                            new Date(record.data.InProgressDate),
+                                            new Date(record.data.AcceptedDate)
+                                        );
+
+                                        // Let's ignore cycle times less than .25 days as they reflect someone doing paperwork and moving work items very quickly
+                                        if (estimateEntry.cycleTime > 0.25) {
+                                            if (!(_.contains(Object.keys(
+                                                        estimateTimes),
+                                                    estimateEntry.estimate.toString()
+                                                ))) {
+                                                estimateTimes[estimateEntry.estimate] = [];
+                                            }
+                                            estimateTimes[estimateEntry.estimate]
+                                                .push(estimateEntry);
+                                        }
+                                    }
+                                }, app);
+
+                                if (model == 'UserStory' && this.getSetting(
+                                        'includeDefects')) {
+                                    app.fetchCycleTimes(filters, 'Defect',
+                                        estimateTimes);
+                                } else {
+                                    app.prepareScatterChart(estimateTimes);
+                                }
+                            }
+                        }
+                    });
+                },
+
+                // Organize the data for the cycle times by estimate scatter chart
+                prepareScatterChart: function (estimateTimes) {
+                    if (Object.keys(estimateTimes).length > 0) {
+                        var seriesData = [];
+                        seriesData.push({});
+                        seriesData[0].name = 'Work Items';
+                        // Disable the turbo threshold as we may have a lot of data in the chart
+                        seriesData[0].turboThreshold = 0;
+                        seriesData[0].data = [];
+                        _.each(estimateTimes, function (estimateLookup) {
+                            _.each(estimateLookup, function (story) {
+                                var point = {};
+                                point.x = story.estimate;
+                                point.y = story.cycleTime;
+                                point.tooltip = story.id + " - " + story.name +
+                                    "<br/>Cycle Time: " + story.cycleTime + "d";
+                                // Store some additional data that, although not needed for the graph, we can use again later
+                                point.name = story.name;
+                                point.id = story.id;
+                                point.ref = story.ref;
+                                seriesData[0].data.push(point);
+                            }, app);
+                        }, app);
+                        app.drawScatterChart(seriesData, estimateTimes);
+                    } else {
+                        app.showMessage(
+                            'There is no data. There needs to be work items with PlanEstimate which were marked in-progress and accepted within the timebox. You can use the app\'s settings to display stories and/or defects.'
+                        );
+                    }
+                },
+
+                drawScatterChart: function (seriesData, estimateTimes) {
+                    scatterChart = contentContainer.add({
+                        xtype: 'rallychart',
+                        storeConfig: {},
+                        chartConfig: {
+                            chart: {
+                                type: 'scatter',
+                                zoomType: 'xy'
+                            },
+                            legend: {
+                                enabled: true
+                            },
+                            xAxis: {
+                                title: {
+                                    text: 'Plan Estimate'
+                                },
+                                tickInterval: null,
+                                startOnTick: true,
+                                endOnTick: true,
+                                showLastLabel: true,
+                                min: 0
+                            },
+                            yAxis: {
+                                title: {
+                                    text: 'Cycle Time (workdays)'
+                                },
+                                tickInterval: null,
+                                min: 0,
+                                gridLineWidth: 0
+                            },
+                            title: {
+                                text: ''
+                            },
+                            tooltip: {
+                                useHTML: true,
+                                pointFormat: '{point.tooltip}',
+                                headerFormat: ''
+                            }
+                        },
+                        chartData: {
+                            series: seriesData
+                        }
+                    });
+
+                    // Workaround bug in setting colors - http://stackoverflow.com/questions/18361920/setting-colors-for-rally-chart-with-2-0rc1/18362186
+                    var colors = ["#61257a"];
+                    scatterChart.setChartColors(colors);
+
+                    contentContainer.add({
+                        xtype: 'label',
+                        html: 'This graph shows your completed work items\' cycle times by estimate.*<br/>Click below to see how you can improve your estimates to be more consistent and predictable.<br/><br/>',
+                        style: {
+                            'font-size': '15px'
+                        }
+                    });
+
+                    contentContainer.add({
+                        xtype: 'rallybutton',
+                        text: 'Calibrate Estimates',
+                        id: 'calibrationbutton',
+                        handler: function () {
+                            app.onCalibrateButton(estimateTimes);
+                        },
+                        style: {
+                            'background-color': '#61257a',
+                            'border-color': '#61257a'
+                        }
+                    });
+
+                    contentContainer.add({
+                        xtype: 'label',
+                        html: '<a href="https://help.rallydev.com/sizing-and-estimates-overview">Learn about agile estimation</a>',
+                        style: {
+                            'font-size': '15px'
+                        }
+                    });
+
+                    contentContainer.add({
+                        xtype: 'label',
+                        html: '<br/><br/>* Only work items marked in-progress and accepted in this timebox are tracked. Work Items with no estimate, an estimate of 0, or a cycle time of 0.25 days or less are ignored. Use the app\'s setting to choose whether you want to calibrate stories, defects, or both.',
+                        style: {
+                            'font-size': '9px'
+                        }
+                    });
+
+                    this._myMask.hide();
+                },
+
+                // Create a box plot showing the distribution of cycle times for each estimate
+                onCalibrateButton: function (estimateTimes) {
+                    var boxplots = [];
+                    var outliers = [];
+
+                    // Sort the estimate times so that estimates of .5 don't appear at the end of the x-axis
+                    var sortedKeys = _.keys(estimateTimes).map(Number).sort(function (a, b) {
+                        return a - b;
+                    });
+                    _.each(sortedKeys, function (key) {
+                        var values = estimateTimes[key].sort(function (a, b) {
+                            return a.cycleTime - b.cycleTime;
+                        });
+
+                        // Find our quartiles. Logic from http://thiruvikramangovindarajan.blogspot.com/2014/10/calculate-quartile-q1-q3-and-median-q2.html
+                        var Q1 = 0;
+                        var Q2 = 0;
+                        var Q3 = 0;
+                        var q1Arr = [];
+                        var q2Arr = [];
+                        var q3Arr = [];
+
+                        if (values.length == 1) {
+                            q1Arr = q2Arr = q3Arr = values;
+                        } else {
+                            q1Arr = (values.length % 2 === 0) ? values.slice(0, (values.length /
+                                2)) : values.slice(0, Math.floor(values.length / 2));
+                            q2Arr = values;
+                            q3Arr = (values.length % 2 === 0) ? values.slice((values.length /
+                                2), values.length) : values.slice(Math.ceil(values.length /
+                                2), values.length);
+                        }
+
+                        Q1 = app.medianX(q1Arr);
+                        Q2 = app.medianX(q2Arr);
+                        Q3 = app.medianX(q3Arr);
+
+                        var interquartile_range = Q3 - Q1;
+
+                        // find lower outliers
+                        var min_index = 0;
+                        while (values[min_index].cycleTime < (Q1 - (app.OUTLIER_THRESHOLD *
+                                interquartile_range))) {
+                            outliers.push([boxplots.length, values[min_index].cycleTime]);
+                            min_index++;
+                        }
+
+                        // find upper outliers
+                        var max_index = values.length - 1;
+                        while (values[max_index].cycleTime > (Q3 + (app.OUTLIER_THRESHOLD *
+                                interquartile_range))) {
+                            outliers.push([boxplots.length, values[max_index].cycleTime]);
+                            max_index--;
+                        }
+
+                        var boxplotPoint = {};
+                        boxplotPoint.x = boxplots.length;
+                        boxplotPoint.low = values[min_index].cycleTime;
+                        boxplotPoint.q1 = Q1;
+                        boxplotPoint.median = Q2;
+                        boxplotPoint.q3 = Q3;
+                        boxplotPoint.high = values[max_index].cycleTime;
+                        boxplotPoint.count = max_index - min_index + 1;
+                        boxplotPoint.estimate = values[0].estimate;
+
+                        boxplots.push(boxplotPoint);
+
+                        // Save summary stats back into the Estimate Values for later access
+                        values.unshift(boxplotPoint);
+                    }, app);
+
+                    app.hideHeader(true);
+                    app.clearContent(false);
+
+                    boxPlotChart = contentContainer.add({
+                        xtype: 'rallychart',
+                        storeConfig: {},
+                        chartConfig: {
+                            chart: {
+                                type: 'boxplot'
+                            },
+                            title: {
+                                text: ''
+                            },
+                            xAxis: {
+                                title: {
+                                    text: 'Plan Estimate (Points)'
+                                }
+                            },
+                            yAxis: {
+                                title: {
+                                    text: 'Cycle Time (workdays)'
+                                },
+                                allowDecimals: false,
+                                min: 0,
+                                gridLineWidth: 0
+                            },
+                            plotOptions: {
+                                column: {
+                                    pointPadding: 0.2,
+                                    borderWidth: 0
+                                }
+                            }
+                        },
+
+                        chartData: {
+                            series: [{
+                                    name: 'Cycle Time',
+                                    data: boxplots,
+                                    tooltip: {
+                                        headerFormat: "<b>Estimate:</b> {point.x}<br/>",
+                                        pointFormat: "<b>Maximum:</b> {point.high}<br/><b>Upper quartile:</b> {point.q3}<br/><b>Median:</b> {point.median}<br/><b>Lower quartile:</b> {point.q1}<br/><b>Minimum:</b> {point.low}<br/><b>Count:</b> {point.count}"
+                                    }
+                                },
+                                {
+                                    name: 'Outliers',
+                                    type: 'scatter',
+                                    data: outliers,
+                                    tooltip: {
+                                        pointFormat: '{point.y}'
+                                    },
+                                    marker: {
+                                        symbol: 'circle'
+                                    }
+                                }
+                            ],
+                            categories: sortedKeys
+                        }
+                    });
+
+                    // Workaround bug in setting colors - http://stackoverflow.com/questions/18361920/setting-colors-for-rally-chart-with-2-0rc1/18362186
+                    var colors = ["#61257a", "#61257a"];
+                    boxPlotChart.setChartColors(colors);
+
+                    contentContainer.add({
+                        xtype: 'label',
+                        html: 'Your data, displayed as a box plot, will help us identify which stories could benefit most from further analysis.<br/>First, let\'s find where you are already being consistent. We will use this as an anchor estimate to then form a basis for your other relative estimates.<br/><br/>',
+                        style: {
+                            'font-size': '15px'
+                        }
+                    });
+
+                    contentContainer.add({
+                        xtype: 'rallybutton',
+                        text: 'Identify Anchor Estimate',
+                        handler: function () {
+                            app.onIdentifyAnchorButton(estimateTimes);
+                        },
+                        style: {
+                            'background-color': '#61257a',
+                            'border-color': '#61257a'
+                        }
+                    });
+
+                    contentContainer.add({
+                        xtype: 'label',
+                        html: '<a href="https://www.khanacademy.org/math/probability/data-distributions-a1/box--whisker-plots-a1/v/reading-box-and-whisker-plots">Learn how to read box plots</a>',
+                        style: {
+                            'font-size': '15px'
+                        }
+                    });
+                },
+
+                // Identify which estimate's cycle times are the most consistent 
+                onIdentifyAnchorButton: function (estimateTimes) {
+                    var bestScore = 0;
+                    var bestEstimate;
+                    var bestX;
+                    var bestMedianCycleTime;
+                    _.each(estimateTimes, function (values) {
+                        // The first element of each app estimates array should have the summary boxplot info
+                        boxplotSummary = values[0];
+                        var score = boxplotSummary.count / (boxplotSummary.q3 -
+                            boxplotSummary.q1);
+                        if (score != Infinity) {
+                            if (score > bestScore) {
+                                bestScore = score;
+                                bestX = boxplotSummary.x;
+                                bestEstimate = boxplotSummary.estimate;
+                                bestMedianCycleTime = boxplotSummary.median;
+                            }
+                        }
+                    });
+
+                    //TODO: If all the scores are Infinity, a RTE happens after this when color is set on a null object
+
+                    var chartData = boxPlotChart.getChartData();
+                    var chartConfig = boxPlotChart.getChartConfig();
+
+                    // Let's not color the outliers as it helps communicate that we're ignoring them
+                    chartData.series[0].data[bestX].color = '#d30606';
+                    boxPlotChart.refresh({
+                        chartData: chartData
+                    });
+
+                    app.clearContent(true);
+
+                    contentContainer.add({
+                        xtype: 'label',
+                        html: 'Stories with an estimate of ' + bestEstimate +
+                            ' had the best balance of a tight interquartile range and a large number of stories. Let\'s use this to set ideal relative cycle times for our estimates.<br/><br/>',
+                        style: {
+                            'font-size': '15px'
+                        }
+                    });
+
+                    contentContainer.add({
+                        xtype: 'rallybutton',
+                        text: 'Project Ideal Cycle Times',
+                        handler: function () {
+                            app.onProjectIdealCycleTimesButton(bestEstimate,
+                                bestMedianCycleTime);
+                        },
+                        style: {
+                            'background-color': '#61257a',
+                            'border-color': '#61257a'
+                        }
+                    });
+
+                },
+
+                // Determine the ideal cycle time for each estimate and draw lines on the chart.
+                onProjectIdealCycleTimesButton: function (bestEstimate, bestMedianCycleTime) {
+                    var chartData = boxPlotChart.getChartData();
+                    var estimateIdeals = {};
+
+                    // Create a line showing the ideal cycle time for each estimate
+                    var greyColor = 9;
+                    var boxplotData = chartData.series[0].data.slice(0).reverse();
+                    _.each(boxplotData, function (boxplot) {
+                        var diff = boxplot.estimate / bestEstimate;
+                        var ideal = bestMedianCycleTime * diff;
+
+                        estimateIdeals[boxplot.estimate] = ideal;
+
+                        var newSeries = {};
+                        newSeries.type = 'line';
+                        newSeries.name = 'Ideal Cycle Time for ' + boxplot.estimate + 's';
+                        newSeries.lineWidth = 2;
+                        newSeries.marker = {};
+                        newSeries.marker.enabled = false;
+                        newSeries.dashStyle = 'dash';
+
+                        newSeries.color = '#' + Array(7).join(parseInt(greyColor, 10).toString());
+                        // Increment the grey color by a percentage of the overall hex spectrum to get a gradient
+                        // NOTE: Avoid hex letters to make it simpler and not be too light
+                        greyColor = greyColor - (9 / boxplotData.length);
+
+                        // The data is an array of the ideal, one for each estimate
+                        var dataArray = [];
+                        for (i = 0; i < boxplotData.length; i++) {
+                            dataArray.push({
+                                x: i,
+                                y: ideal
+                            });
+                        }
+                        newSeries.data = dataArray;
+
+                        chartData.series.unshift(newSeries);
+                    });
+
+                    boxPlotChart.refresh({
+                        chartData: chartData
+                    });
+
+                    app.clearContent(true);
+
+                    contentContainer.add({
+                        xtype: 'label',
+                        html: 'Taking these ideal cycle times, let\'s apply them back to our individual work item cycle times to see if there are ways to better estimate your work.<br/><br/>',
+                        style: {
+                            'font-size': '15px'
+                        }
+                    });
+
+                    contentContainer.add({
+                        xtype: 'rallybutton',
+                        text: 'Identify Opportunities for Improvement',
+                        handler: function () {
+                            app.onIdentifyImprovements(estimateIdeals);
+                        },
+                        style: {
+                            'background-color': '#61257a',
+                            'border-color': '#61257a'
+                        }
+                    });
+                },
+
+                // Create bands for min and max cycle times per estimate, and identify the top 5 stories out of the bands
+                onIdentifyImprovements: function (estimateIdeals) {
+                    app.clearContent(false);
+
+                    // Create lookup for estimate by cycle time
+                    var minEstimateSeriesData = [];
+                    var maxEstimateSeriesData = [];
+                    // Sort the estimate ideals so that estimates of .5 don't appear at the end of the x-axis
+                    var sortedKeys = _.keys(estimateIdeals).map(Number).sort(function (a, b) {
+                        return a - b;
+                    });
+                    sortedKeys.forEach(function (estimate, index) {
+                        var prevDiff = null;
+                        // If we're on the first estimate, there's no prior
+                        if (minEstimateSeriesData.length !== 0) {
+                            var priorEstimate = sortedKeys[index - 1];
+                            prevDiff = (estimateIdeals[estimate] - estimateIdeals[
+                                priorEstimate]) * (priorEstimate / estimate);
+                        }
+
+                        var nextDiff = null;
+                        // If we're on the last estimate, there's no next
+                        if (maxEstimateSeriesData.length != estimateIdeals.length - 1) {
+                            var nextEstimate = sortedKeys[index + 1];
+                            nextDiff = (estimateIdeals[nextEstimate] - estimateIdeals[
+                                estimate]) * (1 - (estimate / nextEstimate));
+                        }
+
+                        if (!prevDiff && !nextDiff) {
+                            prevDiff = nextDiff = 0;
+                        } else if (!prevDiff) {
+                            prevDiff = nextDiff;
+                        } else if (!nextDiff) {
+                            nextDiff = prevDiff;
+                        }
+
+                        var minIdealCycleTime = estimateIdeals[estimate] - prevDiff;
+                        minEstimateSeriesData.push({
+                            x: parseInt(estimate, 10),
+                            y: minIdealCycleTime,
+                            tooltip: 'Minimum Ideal Cycle Time: ' +
+                                minIdealCycleTime
+                        });
+                        var maxIdealCycleTime = estimateIdeals[estimate] + nextDiff;
+                        maxEstimateSeriesData.push({
+                            x: parseInt(estimate, 10),
+                            y: maxIdealCycleTime,
+                            tooltip: 'Maximum Ideal Cycle Time: ' +
+                                maxIdealCycleTime
+                        });
+                    });
+
+                    var minCycleTimes = {
+                        type: 'line',
+                        name: 'Min Ideal Cycle Times',
+                        data: minEstimateSeriesData,
+                        lineWidth: 2,
+                        marker: {
+                            enabled: false
+                        },
+                        color: '#ad3408'
+                    };
+
+                    var maxCycleTimes = {
+                        type: 'line',
+                        name: 'Max Ideal Cycle Times',
+                        data: maxEstimateSeriesData,
+                        lineWidth: 2,
+                        marker: {
+                            enabled: false
+                        },
+                        color: '#ad3408'
+                    };
+
+                    chartData = scatterChart.getChartData();
+
+                    _.each(chartData.series[0].data, function (scatterPoint) {
+                        var ideal;
+                        var maxEstimateSeriesIndex = _.findKey(maxEstimateSeriesData,
+                            function (v) {
+                                return v.y > scatterPoint.y;
+                            });
+                        if (maxEstimateSeriesIndex !== undefined) {
+                            ideal = maxEstimateSeriesData[maxEstimateSeriesIndex].x;
+                        } else {
+                            ideal = undefined;
+                        }
+
+                        if (ideal === undefined) {
+                            // Set an arbitrarily high score for stories whose estimates are above the current team's scale, as we don't know how bad they are.
+                            // Subtract the point's estimate as smaller estimates that are off the scale are worst
+                            scatterPoint.issueScore = 1000 - scatterPoint.x;
+                            // Include the cycle time in the math to break ties
+                            scatterPoint.issueScore += (scatterPoint.y / 1000);
+                        } else {
+                            scatterPoint.issueScore = Math.abs(scatterPoint.x - ideal);
+                            // Include the cycle time in the math to break ties
+                            var cycleTimeScore = (Math.abs(maxEstimateSeriesData[
+                                maxEstimateSeriesIndex].y - scatterPoint.y) / 1000);
+                            if (scatterPoint.x - ideal >= 0) {
+                                scatterPoint.issueScore += cycleTimeScore;
+                            } else {
+                                scatterPoint.issueScore -= cycleTimeScore;
+                            }
+                        }
+
+                        scatterPoint.tooltip += '<br/>Estimate: ' + scatterPoint.x +
+                            '<br/>Ideal Estimate: ';
+                        if (ideal !== undefined) {
+                            scatterPoint.tooltip += ideal;
+                        } else {
+                            scatterPoint.tooltip += '>' + maxEstimateSeriesData[
+                                maxEstimateSeriesData.length - 1].x;
+                        }
+                        scatterPoint.ideal = ideal;
+
+                        if (scatterPoint.x != ideal) {
+                            scatterPoint.color = '#61257a';
+                        } else {
+                            scatterPoint.color = '#d30606';
+                        }
+                    });
+                    chartData.series[0].marker = {};
+                    chartData.series[0].marker.symbol = 'circle';
+
+                    var rankedIssues = _.sortBy(chartData.series[0].data, function (point) {
+                        return point.issueScore;
+                    });
+                    rankedIssues.reverse();
+
+                    var worstIssues = [];
+                    for (i = 0; i < 5; i++) {
+                        var tooltipMatch = rankedIssues[i].tooltip;
+                        for (j = 0; j < chartData.series[0].data.length; j++) {
+                            scatterPoint = chartData.series[0].data[j];
+                            if (scatterPoint.tooltip == tooltipMatch) {
+                                scatterPoint.marker = {};
+                                scatterPoint.marker.symbol = 'diamond';
+                                scatterPoint.color = '#3300ff';
+
+                                var idealString;
+                                if (scatterPoint.ideal !== undefined) {
+                                    idealString = scatterPoint.ideal.toString();
+                                } else {
+                                    idealString = '>' + maxEstimateSeriesData[maxEstimateSeriesData
+                                        .length - 1].x;
+                                }
+
+                                worstIssues.push([
+                                    // TODO: See if we can get the nice formatted ID renderer to work
+                                    /*{ 
+                                    	FormattedID: scatterPoint.id,
+                                    	_ref: scatterPoint.ref
+                                    },*/
+                                    scatterPoint.id,
+                                    scatterPoint.name,
+                                    scatterPoint.y,
+                                    scatterPoint.x,
+                                    idealString
+                                ]);
+                            }
+                        }
+                    }
+
+                    var worstIssuesStore = Ext.create('Ext.data.ArrayStore', {
+                        storeId: 'worstIssues',
+                        fields: [{
+                                name: 'formattedId',
+                                type: 'string'
+                            },
+                            {
+                                name: 'name',
+                                type: 'string'
+                            },
+                            {
+                                name: 'cycleTime',
+                                type: 'float'
+                            },
+                            {
+                                name: 'estimate',
+                                type: 'integer'
+                            },
+                            {
+                                name: 'idealEstimate',
+                                type: 'string'
+                            }
+                        ],
+                        data: worstIssues
+                    });
+
+                    chartData.series.unshift(maxCycleTimes);
+                    chartData.series.unshift(minCycleTimes);
+
+                    // Reshow our scatter plot
+                    contentContainer.add(Ext.merge(scatterChart.initialConfig, chartData));
+
+                    contentContainer.add({
+                        xtype: 'label',
+                        html: 'On the scatter plot of cycle times by estimate, we now have lines to note the minimum and maximum cycle times for each estimate. The work items that need the most readjustment have been marked in blue diamonds, and listed below:<br/><br/>',
+                        style: {
+                            'font-size': '15px'
+                        }
+                    });
+
+                    contentContainer.add({
+                        xtype: 'rallygrid',
+                        showPagingToolbar: false,
+                        showRowActionsColumn: false,
+                        editable: false,
+                        store: worstIssuesStore,
+                        columnCfgs: [{
+                                // TODO: Get this to use the nice formattedID renderer
+                                //	xtype: 'templatecolumn',
+                                //	tpl: Ext.create('Rally.ui.renderer.template.FormattedIDTemplate'),
+                                text: 'ID',
+                                dataIndex: 'formattedId',
+                                flex: true
+                            },
+                            {
+                                text: 'Name',
+                                dataIndex: 'name',
+                                flex: true
+                            },
+                            {
+                                text: 'Cycle Time',
+                                dataIndex: 'cycleTime',
+                                flex: true
+                            },
+                            {
+                                text: 'Estimate',
+                                dataIndex: 'estimate',
+                                flex: true
+                            },
+                            {
+                                text: 'Ideal Estimate',
+                                dataIndex: 'idealEstimate',
+                                flex: true
+                            }
+                        ]
+                    });
+
+                    contentContainer.add({
+                        xtype: 'label',
+                        html: '<br/>',
+                        style: {
+                            'font-size': '15px'
+                        }
+                    });
+
+                    contentContainer.add({
+                        xtype: 'rallybutton',
+                        text: 'Brainstorm Actions to Realign Estimates',
+                        handler: function () {
+                            app.onBrainstormActions();
+                        },
+                        style: {
+                            'background-color': '#61257a',
+                            'border-color': '#61257a'
+                        }
+                    });
+                },
+
+                onBrainstormActions: function () {
+                    app.clearContent(false);
+
+                    contentContainer.add({
+                        xtype: 'label',
+                        html: 'What actions could you take to better estimate work items like these? Some questions to spark discussion:<br/><ul><li>What, had you known it sooner, would have changed your estimate? How could you have known sooner?</li><li>Could this work have been broken down into smaller work items?</li><li>What risks manifested during this work? Could they have been avoided or mitigated?</li><li>Did emergency work cause you to put this work on hold? If so, was it the right decision to change priorities?</li><li>Are there patterns or similarities to this work that you could watch for in future estimations?</li></ul>Please enter actions you could take to better estimate work items like these in the future.<br/><br/>NOTE: These actions are not currently saved, so make a copy for later if you\'d like.',
+                        style: {
+                            'font-size': '15px'
+                        }
+                    });
+
+                    contentContainer.add({
+                        xtype: 'textareafield',
+                        grow: true,
+                        name: 'actionItems',
+                        anchor: '100%',
+                        width: '100%'
+                    });
+
+                    contentContainer.add({
+                        xtype: 'label',
+                        html: '<br/>Congrats in advance for committing to these action items and making your estimates more consistent and predictable. Hopefully you\'ll check back after they\'re implemented to see how your cycle times have changed and identify your next actions for continual improvement.',
+                        style: {
+                            'font-size': '15px'
+                        }
+                    });
+                },
+
+                showMessage: function (text) {
+                    app._myMask.hide();
+                    contentContainer.add({
+                        xtype: 'label',
+                        text: text
+                    });
+                },
+
+                medianX: function (medianArr) {
+                    count = medianArr.length;
+                    median = (count % 2 === 0) ? (medianArr[(medianArr.length / 2) - 1].cycleTime +
+                        medianArr[(medianArr.length / 2)].cycleTime) / 2 : medianArr[Math.floor(
+                        medianArr.length / 2)].cycleTime;
+                    return median;
+                },
+
+                countWeekDays: function (dDate1, dDate2) {
+                    var days = 0;
+                    var dateItr = dDate1;
+
+                    while (dateItr < dDate2) {
+                        dateItr.setHours(dateItr.getHours() + 6);
+                        // if the new day is a weekend, don't count it
+                        // TODO: be locale aware and DST aware
+                        if ((dateItr.getDay() != 6) && (dateItr.getDay() !== 0)) {
+                            days = days + 0.25;
+                        }
+                    }
+                    return days;
+                },
+
+                hideHeader: function (hiddenValue) {
+                    if (filterContainer) {
+                        filterContainer.setVisible(!hiddenValue);
+                    }
+                },
+
+                clearContent: function (keepCharts) {
+                    while (contentContainer.down('label')) {
+                        contentContainer.down('label').destroy();
+                    }
+                    while (contentContainer.down('button')) {
+                        contentContainer.down('button').destroy();
+                    }
+                    while (contentContainer.down('rallygrid')) {
+                        contentContainer.down('rallygrid').destroy();
+                    }
+                    while (contentContainer.down('textareafield')) {
+                        contentContainer.down('textareafield').destroy();
+                    }
+
+                    if (!keepCharts) {
+                        while (contentContainer.down('rallychart')) {
+                            contentContainer.down('rallychart').destroy();
+                        }
+                    }
+                }
+            });
+
+            Rally.launchApp('CustomApp', {
+                name: "estimation-calibration",
+                parentRepos: ""
+            });
+
+        });
+    </script>
+
+
+
+    <style type="text/css">
+        .app {
+            /* Add app styles here */
+        }
+    </style>
+</head>
+
+<body>
+</body>
+
+</html>
