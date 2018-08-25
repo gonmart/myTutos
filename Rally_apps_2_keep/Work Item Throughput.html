@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Work Item Throughput</title>
+    <!--  (c) 2017 CA Technologies.  All Rights Reserved. -->
+    <!--  Build Date: Sun Feb 25 2018 09:44:23 GMT-0700 (MST) -->
+
+    <script type="text/javascript">
+        var APP_BUILD_DATE = "Sun Feb 25 2018 09:44:23 GMT-0700 (MST)";
+        var STORY = "F258";
+        var BUILDER = "corkr03";
+        var CHECKSUM = 11071810568;
+    </script>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+    <!-- our highcharts (needed so that we can add patterns) 
+    <script type="text/javascript" src="/apps/2.1/lib/analytics/analytics-all.js"></script>
+    -->
+
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+            Ext.define("Rally.technicalservices.InfoLink", {
+                extend: "Rally.ui.dialog.Dialog",
+                alias: "widget.tsinfolink",
+                informationHtml: null,
+                title: "Build Information",
+                defaults: {
+                    padding: 5,
+                    margin: 5
+                },
+                closable: !0,
+                draggable: !0,
+                autoShow: !0,
+                width: 350,
+                informationalConfig: null,
+                items: [{
+                    xtype: "container",
+                    itemId: "information"
+                }],
+                initComponent: function () {
+                    Ext.id(this);
+                    this.title = "<span class='icon-help'> </span>" + this.title, this.callParent(
+                        arguments)
+                },
+                _generateChecksum: function (a) {
+                    var b, c = 305419896;
+                    for (a = a.replace(/var CHECKSUM = .*;/, ""), a = a.replace(
+                            /var BUILDER  = .*;/, ""), a = a.replace(/\s/g, ""), b = 0; b < a.length; b++)
+                        c += a.charCodeAt(b) * b;
+                    return c
+                },
+                _checkChecksum: function (a) {
+                    var b = Ext.create("Deft.Deferred"),
+                        c = this;
+                    return Ext.Ajax.request({
+                        url: document.URL,
+                        params: {
+                            id: 1
+                        },
+                        success: function (a) {
+                            if (text = a.responseText, CHECKSUM) {
+                                var d = c._generateChecksum(text);
+                                if (CHECKSUM !== d) return void b.resolve(!1)
+                            }
+                            b.resolve(!0)
+                        }
+                    }), b.promise
+                },
+                _addToContainer: function (a) {
+                    var b = Ext.apply({
+                        xtype: "container",
+                        height: 200,
+                        overflowY: !0
+                    }, this.informationalConfig);
+                    a.add(b)
+                },
+                afterRender: function () {
+                    var a = Rally.getApp();
+                    if (!Ext.isEmpty(this.informationalConfig)) {
+                        var b = this.down("#information");
+                        this._addToContainer(b)
+                    }
+                    a.isExternal() ? this.addDocked({
+                        xtype: "container",
+                        cls: "build-info",
+                        padding: 2,
+                        dock: "bottom",
+                        html: "... Running externally"
+                    }) : this._checkChecksum(a).then({
+                        scope: this,
+                        success: function (a) {
+                            a || this.addDocked({
+                                xtype: "container",
+                                cls: "build-info",
+                                dock: "bottom",
+                                padding: 2,
+                                html: '<span class="icon-warning"> </span>Checksums do not match'
+                            })
+                        },
+                        failure: function (a) {
+                            console.log("oops:", a)
+                        }
+                    }), this.callParent(arguments)
+                },
+                beforeRender: function () {
+                    if (this.callParent(arguments), this.informationHtml && this.addDocked({
+                            xtype: "component",
+                            componentCls: "intro-panel",
+                            padding: 2,
+                            html: this.informationHtml,
+                            doc: "top"
+                        }), this.addDocked({
+                            xtype: "container",
+                            cls: "build-info",
+                            padding: 2,
+                            dock: "bottom",
+                            html: "This app was created by the CA AC Technical Services Team."
+                        }), APP_BUILD_DATE) {
+                        var a = Ext.String.format("Built on: {0} <br/>Built by: {1}",
+                            APP_BUILD_DATE, BUILDER);
+                        STORY && (a = a + "<br/>Source story: " + STORY), this.addDocked({
+                            xtype: "container",
+                            cls: "build-info",
+                            padding: 2,
+                            dock: "bottom",
+                            html: a
+                        })
+                    }
+                }
+            }), Ext.define("Rally.technicalservices.Logger", {
+                constructor: function (a) {
+                    Ext.apply(this, a)
+                },
+                log: function (a) {
+                    var b = "[ " + Ext.util.Format.date(new Date, "Y-m-d H:i:s.u") + " ]",
+                        c = [];
+                    c = Ext.Array.push(c, [b]), c = Ext.Array.push(c, Ext.Array.slice(arguments, 0)),
+                        window.console && console.log.apply(console, c)
+                }
+            }), Ext.define("CATS.workitemThroughput.utils.Toolbox", {
+                singleton: !0,
+                saveCSVToFile: function (a, b, c) {
+                    void 0 === c && (c = {
+                        type: "text/csv;charset=utf-8"
+                    }), this.saveAs(a, b, c)
+                },
+                saveAs: function (a, b) {
+                    if (Ext.isIE9m) return void Rally.ui.notify.Notifier.showWarning({
+                        message: "Export is not supported for IE9 and below."
+                    });
+                    var c = null;
+                    try {
+                        c = new Blob([a], {
+                            type: "text/plain"
+                        })
+                    } catch (d) {
+                        window.BlobBuilder = window.BlobBuilder || window.WebKitBlobBuilder ||
+                            window.MozBlobBuilder || window.MSBlobBuilder, window.BlobBuilder &&
+                            "TypeError" == d.name && (bb = new BlobBuilder, bb.append([a]), c = bb.getBlob(
+                                "text/plain"))
+                    }
+                    if (!c) return void Rally.ui.notify.Notifier.showWarning({
+                        message: "Export is not supported for this browser."
+                    });
+                    var e = b;
+                    if (Ext.isIE10p) return void window.navigator.msSaveOrOpenBlob(c, e);
+                    var f = this.createObjectURL(c);
+                    if (f) {
+                        var g = document.createElement("a");
+                        "download" in g ? g.download = e : g.target = "_blank", g.innerHTML =
+                            "Download File", g.href = f, Ext.isChrome || (g.onclick = this.destroyClickedElement,
+                                g.style.display = "none", document.body.appendChild(g)), g.click()
+                    } else Rally.ui.notify.Notifier.showError({
+                        message: "Export is not supported "
+                    })
+                },
+                createObjectURL: function (a) {
+                    return window.webkitURL ? window.webkitURL.createObjectURL(a) : window.URL &&
+                        window.URL.createObjectURL ? window.URL.createObjectURL(a) : null
+                },
+                destroyClickedElement: function (a) {
+                    document.body.removeChild(a.target)
+                }
+            }), Ext.define("RallyTechServices.workItemThroughput.utils.FlowCalculator", {
+                singleton: !0,
+                dateMapping: {
+                    week: {
+                        dateFormat: "w",
+                        dateUnit: "week",
+                        unitMultiplier: 1,
+                        dateFormat: "Y-m-d"
+                    },
+                    month: {
+                        dateFormat: "m",
+                        dateUnit: "month",
+                        unitMultiplier: 1,
+                        dateFormat: "M-y"
+                    },
+                    quarter: {
+                        dateFormat: "m",
+                        dateUnit: "month",
+                        unitMultiplier: 3,
+                        dateFormat: "M-y"
+                    }
+                },
+                getFormattedBuckets: function (a, b, c) {
+                    var d = this.getBuckets(a, b, c),
+                        e = RallyTechServices.workItemThroughput.utils.FlowCalculator.dateMapping[a];
+                    return e && d && 0 !== d.length ? _.map(d, function (a) {
+                        return Rally.util.DateTime.format(a.start, e.dateFormat)
+                    }) : []
+                },
+                getBuckets: function (a, b, c) {
+                    var d = RallyTechServices.workItemThroughput.utils.FlowCalculator.getStartDateBoundary(
+                        a, b, c);
+                    if (!d) return [];
+                    for (var e = RallyTechServices.workItemThroughput.utils.FlowCalculator.dateMapping[
+                                a].unitMultiplier, f = RallyTechServices.workItemThroughput.utils.FlowCalculator
+                            .dateMapping[a].dateUnit, g = [], h = 0, i = d; b > h;) {
+                        h++;
+                        var c = Rally.util.DateTime.add(d, f, h * e);
+                        g.push({
+                            start: i,
+                            end: c
+                        }), i = c
+                    }
+                    return g
+                },
+                getBucketData: function (a, b, c, d, e, f) {
+                    for (var g = RallyTechServices.workItemThroughput.utils.FlowCalculator.getBuckets(
+                            a, b, f), h = _.map(g, function (a) {
+                            return 0
+                        }), i = 0; i < c.length; i++) {
+                        var j = 1,
+                            k = c[i].get(e),
+                            l = c[i].get("DirectChildrenCount") || 0;
+                        if (d && "count" !== d && (j = c[i].get(d) || 0), 0 === l)
+                            for (var m = 0; m < g.length; m++) k >= g[m].start && k < g[m].end && (
+                                h[m] += j, m = g.length)
+                    }
+                    return h
+                },
+                getStartDateBoundary: function (a, b, c) {
+                    var d = RallyTechServices.workItemThroughput.utils.FlowCalculator.dateMapping;
+                    if (1 > b || !d[a]) return null;
+                    var e = c || new Date,
+                        f = d[a].dateUnit,
+                        g = b * d[a].unitMultiplier,
+                        h = Rally.util.DateTime.add(e, f, -g);
+                    return RallyTechServices.workItemThroughput.utils.FlowCalculator.getBeginningOfIncrement(
+                        h, a)
+                },
+                getBeginningOfIncrement: function (a, b) {
+                    var c = new Date(a);
+                    if (c.setHours(0), c.setMinutes(0), c.setSeconds(0), "week" === b) {
+                        var d = c.getDay();
+                        return 0 === d ? c : c = Rally.util.DateTime.add(c, "day", -d)
+                    }
+                    if (c.setDate(1), "month" === b) return new Date(c.getFullYear(), c.getMonth(),
+                        1);
+                    if ("quarter" === b) {
+                        var e = c.getMonth(),
+                            f = 3 * Math.floor(e / 3);
+                        return c.setMonth(f), c
+                    }
+                    return null
+                },
+                shiftDateToMonday: function (a) {
+                    var b = a.getDay(),
+                        c = 0;
+                    0 === b && (c = 1), 6 === b && (c = 2);
+                    var d = a;
+                    return c > 0 && (d = new Date(a.setHours(0)), d = Rally.util.DateTime.add(d,
+                        "day", c)), d
+                }
+            }), Ext.define("workitem-throughput", {
+                extend: "Rally.app.App",
+                componentCls: "app",
+                logger: new Rally.technicalservices.Logger,
+                defaults: {
+                    margin: 10
+                },
+                items: [{
+                    xtype: "container",
+                    itemId: "message_box",
+                    tpl: "Hello, <tpl>{_refObjectName}</tpl>"
+                }, {
+                    xtype: "container",
+                    itemId: "display_box"
+                }],
+                integrationHeaders: {
+                    name: "workitem-throughput"
+                },
+                config: {
+                    defaultSettings: {
+                        throughputMeasure: "PlanEstimate",
+                        timeboxGranularity: "week",
+                        numberTimeboxes: 6,
+                        artifactModels: ["Defect", "UserStory"],
+                        allowSettingsOverride: !0
+                    }
+                },
+                MAX_TIMEBOXES: 26,
+                launch: function () {
+                    this.initializeApp()
+                },
+                initializeApp: function () {
+                    if (this.getAllowSettingsOverride()) {
+                        this.removeAll(), this.suspendEvents();
+                        var a = this.add({
+                                xtype: "container",
+                                layout: "hbox"
+                            }),
+                            b = a.add({
+                                xtype: "rallycombobox",
+                                fieldLabel: "Timebox Granularity",
+                                labelAlign: "right",
+                                name: "timeboxGranularity",
+                                itemId: "timeboxGranularity",
+                                editable: !1,
+                                store: Ext.create("Rally.data.custom.Store", {
+                                    data: this.getGranularityData(),
+                                    fields: ["name", "value"]
+                                }),
+                                allowNoEntry: !1,
+                                displayField: "name",
+                                valueField: "value",
+                                stateful: !0,
+                                margin: 5,
+                                stateId: "granularity-data"
+                            }),
+                            c = a.add({
+                                xtype: "rallynumberfield",
+                                fieldLabel: "# Timeboxes",
+                                labelAlign: "right",
+                                itemId: "numberTimeboxes",
+                                name: "numberTimeboxes",
+                                minValue: 1,
+                                maxValue: this.MAX_TIMEBOXES,
+                                stateful: !0,
+                                margin: 5,
+                                stateId: "number-timeboxes"
+                            });
+                        this.addExportButton(a), b.on("change", this.updateDisplay, this), c.on(
+                            "change", this.updateDisplay, this)
+                    } else this.addExportButton(this);
+                    this.updateDisplay()
+                },
+                addExportButton: function (a) {
+                    a.add({
+                        xtype: "rallybutton",
+                        iconCls: "icon-export",
+                        cls: "rly-small secondary",
+                        handler: this._export,
+                        margin: 5,
+                        scope: this
+                    })
+                },
+                updateDisplay: function () {
+                    return this.down("rallychart") && this.down("rallychart").destroy(), this.down(
+                            "#messageBox") && this.down("#messageBox").destroy(), this.logger.log(
+                            "updateDisplay", this.getNumTimeboxes(), this.getTimeboxGranularity()),
+                        this.getNumTimeboxes() && this.getTimeboxGranularity() ? (this.setLoading(!
+                            0), void this.fetchWsapiArtifactRecords({
+                            models: this.getArtifactModels(),
+                            limit: 1 / 0,
+                            fetch: this.getArtifactFetch(),
+                            filters: this.getArtifactFilters()
+                        }).then({
+                            success: this.buildChart,
+                            failure: this.showErrorNotification,
+                            scope: this
+                        }).always(function () {
+                            this.setLoading(!1)
+                        }, this)) : void this.add({
+                            xtype: "container",
+                            itemId: "messageBox",
+                            html: '<div class="no-data-container"><div class="secondary-message">Please select a granularity and # timeboxes to calculate throughput for.</div></div>'
+                        })
+                },
+                _export: function () {
+                    var a = this.down("rallychart");
+                    if (!a) return void this.showErrorNotification("No chart data to export.");
+                    var b = a && a.getChartData();
+                    this.logger.log("_export", b);
+                    var c = this.getTimeboxGranularity(),
+                        d = _.pluck(b.series, "name"),
+                        e = [],
+                        f = [c].concat(d).concat("Total");
+                    e.push(f.join(","));
+                    for (var g = 0; g < b.categories.length; g++) {
+                        row = [b.categories[g]];
+                        for (var h = 0, i = 0; i < b.series.length; i++) h += b.series[i].data[g],
+                            row.push(b.series[i].data[g]);
+                        row.push(h), e.push(row.join(","))
+                    }
+                    e = e.join("\r\n"), this.logger.log("export " + e);
+                    var j = Ext.String.format("workitem-throughput-{0}.csv", Rally.util.DateTime.format(
+                        new Date, "Y-m-d-h-i-s"));
+                    CATS.workitemThroughput.utils.Toolbox.saveAs(e, j)
+                },
+                getNumTimeboxes: function () {
+                    return this.getAllowSettingsOverride() ? this.down("#numberTimeboxes") && this.down(
+                        "#numberTimeboxes").getValue() || null : this.getSetting(
+                        "numberTimeboxes")
+                },
+                getAllowSettingsOverride: function () {
+                    return this.getSetting("allowSettingsOverride")
+                },
+                getTimeboxGranularity: function () {
+                    return this.getAllowSettingsOverride() ? this.down("#timeboxGranularity") &&
+                        this.down("#timeboxGranularity").getValue() || null : this.getSetting(
+                            "timeboxGranularity")
+                },
+                buildChart: function (a) {
+                    var b = this.getNumTimeboxes(),
+                        c = this.getTimeboxGranularity();
+                    this.logger.log("buildChart: record count, numTimeboxes, TimeboxGranularity", a
+                        .length, b, c);
+                    var d = Ext.Array.filter(a, function (a) {
+                            return "hierarchicalrequirement" === a.get("_type")
+                        }),
+                        e = RallyTechServices.workItemThroughput.utils.FlowCalculator.getBucketData(
+                            c, b, d, this.getThroughputMeasure(), "AcceptedDate"),
+                        f = Ext.Array.filter(a, function (a) {
+                            return "defect" === a.get("_type")
+                        }),
+                        g = RallyTechServices.workItemThroughput.utils.FlowCalculator.getBucketData(
+                            c, b, f, this.getThroughputMeasure(), "AcceptedDate"),
+                        h = [{
+                            name: "User Story",
+                            data: e
+                        }, {
+                            name: "Defect",
+                            data: g
+                        }],
+                        i = RallyTechServices.workItemThroughput.utils.FlowCalculator.getFormattedBuckets(
+                            c, b);
+                    this.down("rallychart") && this.down("rallychart").destroy(), this.add({
+                        xtype: "rallychart",
+                        chartColors: ["#21A2E0", "#f9a814"],
+                        context: this.getContext(),
+                        chartConfig: this.getChartConfig(),
+                        loadMask: !1,
+                        chartData: {
+                            series: h,
+                            categories: i
+                        }
+                    })
+                },
+                getChartConfig: function () {
+                    return {
+                        chart: {
+                            type: "column"
+                        },
+                        title: {
+                            text: this.getChartTitle(),
+                            style: {
+                                color: "#666",
+                                fontSize: "18px",
+                                fontFamily: "ProximaNova",
+                                textTransform: "uppercase",
+                                fill: "#666"
+                            }
+                        },
+                        subtitle: {
+                            text: this.getSubtitle()
+                        },
+                        xAxis: {
+                            title: {
+                                text: null,
+                                style: {
+                                    color: "#444",
+                                    fontFamily: "ProximaNova",
+                                    textTransform: "uppercase",
+                                    fill: "#444"
+                                }
+                            },
+                            labels: {
+                                style: {
+                                    color: "#444",
+                                    fontFamily: "ProximaNova",
+                                    fill: "#444"
+                                }
+                            }
+                        },
+                        yAxis: {
+                            min: 0,
+                            title: {
+                                text: this.getSubtitle(),
+                                style: {
+                                    color: "#444",
+                                    fontFamily: "ProximaNova",
+                                    textTransform: "uppercase",
+                                    fill: "#444"
+                                }
+                            },
+                            labels: {
+                                overflow: "justify",
+                                style: {
+                                    color: "#444",
+                                    fontFamily: "ProximaNova",
+                                    fill: "#444"
+                                }
+                            }
+                        },
+                        tooltip: {
+                            valueSuffix: this.getValueSuffix(),
+                            backgroundColor: "#444",
+                            useHTML: !0,
+                            borderColor: "#444",
+                            style: {
+                                color: "#FFF",
+                                fontFamily: "ProximaNova",
+                                fill: "#444"
+                            }
+                        },
+                        plotOptions: {
+                            column: {
+                                stacking: "normal"
+                            }
+                        },
+                        legend: {
+                            itemStyle: {
+                                color: "#444",
+                                fontFamily: "ProximaNova",
+                                textTransform: "uppercase"
+                            },
+                            borderWidth: 0
+                        }
+                    }
+                },
+                getValueSuffix: function () {
+                    var a = Ext.Array.filter(this.getThroughputMeasureData(), function (a) {
+                        return a.value === this.getThroughputMeasure()
+                    }, this);
+                    return a && 0 !== a.length ? a[0].suffix : " Work Items"
+                },
+                getSubtitle: function () {
+                    var a = Ext.Array.filter(this.getThroughputMeasureData(), function (a) {
+                        return a.value === this.getThroughputMeasure()
+                    }, this);
+                    return a && 0 !== a.length ? Ext.String.format("Sum of {0}", a[0] && a[0].name) :
+                        "Count of Work Items"
+                },
+                getChartTitle: function () {
+                    var a = Ext.Array.filter(this.getGranularityData(), function (a) {
+                        return a.value === this.getTimeboxGranularity()
+                    }, this);
+                    return Ext.String.format("{0} Throughput", a[0] && a[0].name)
+                },
+                showErrorNotification: function (a) {
+                    Rally.ui.notify.Notifier.showError({
+                        message: a,
+                        allowHTML: !0
+                    })
+                },
+                getArtifactModels: function () {
+                    return this.getSetting("artifactModels")
+                },
+                getArtifactFetch: function () {
+                    return ["ObjectID", "AcceptedDate", "DirectChildrenCount", this.getThroughputMeasure()]
+                },
+                getArtifactFilters: function () {
+                    var a = this.getNumTimeboxes(),
+                        b = this.getTimeboxGranularity(),
+                        c = RallyTechServices.workItemThroughput.utils.FlowCalculator.getStartDateBoundary(
+                            b, a);
+                    return [{
+                        property: "AcceptedDate",
+                        operator: ">=",
+                        value: Rally.util.DateTime.toIsoString(c)
+                    }]
+                },
+                getThroughputMeasure: function () {
+                    return this.getSetting("throughputMeasure")
+                },
+                fetchWsapiArtifactRecords: function (a) {
+                    var b = Ext.create("Deft.Deferred");
+                    return a.limit || (a.limit = "Infinity"), a.pageSize || (a.pageSize = 2e3), Ext
+                        .create("Rally.data.wsapi.artifact.Store", a).load({
+                            callback: function (a, c) {
+                                c.wasSuccessful() ? b.resolve(a) : b.reject(
+                                    "Error fetching artifact records: " + c.error && c.error
+                                    .errors.join("<br/>"))
+                            }
+                        }), b.promise
+                },
+                getThroughputMeasureData: function () {
+                    return [{
+                        name: "Plan Estimate",
+                        value: "PlanEstimate",
+                        suffix: " Points"
+                    }, {
+                        name: "Task Actual Total",
+                        value: "TaskActualTotal",
+                        suffix: " Hours"
+                    }, {
+                        name: "Task Estimate Total",
+                        value: "TaskEstimateTotal",
+                        suffix: " Hours"
+                    }]
+                },
+                getGranularityData: function () {
+                    return [{
+                        name: "Weekly",
+                        value: "week"
+                    }, {
+                        name: "Monthly",
+                        value: "month"
+                    }, {
+                        name: "Quarterly",
+                        value: "quarter"
+                    }]
+                },
+                getSettingsFields: function () {
+                    return [{
+                        xtype: "rallycombobox",
+                        fieldLabel: "Throughput Measure",
+                        labelAlign: "right",
+                        labelWidth: 200,
+                        name: "throughputMeasure",
+                        store: Ext.create("Rally.data.custom.Store", {
+                            data: this.getThroughputMeasureData(),
+                            fields: ["name", "value"]
+                        }),
+                        allowNoEntry: !0,
+                        noEntryText: "Count",
+                        displayField: "name",
+                        valueField: "value"
+                    }, {
+                        xtype: "rallycheckboxfield",
+                        fieldLabel: "Allow settings change by users",
+                        labelAlign: "right",
+                        labelWidth: 200,
+                        name: "allowSettingsOverride"
+                    }, {
+                        xtype: "rallycombobox",
+                        fieldLabel: "Timebox Granularity",
+                        labelAlign: "right",
+                        labelWidth: 200,
+                        name: "timeboxGranularity",
+                        store: Ext.create("Rally.data.custom.Store", {
+                            data: this.getGranularityData(),
+                            fields: ["name", "value"]
+                        }),
+                        allowNoEntry: !1,
+                        displayField: "name",
+                        valueField: "value"
+                    }, {
+                        xtype: "rallynumberfield",
+                        fieldLabel: "# Timeboxes",
+                        labelAlign: "right",
+                        labelWidth: 200,
+                        name: "numberTimeboxes",
+                        minValue: 1,
+                        maxValue: this.MAX_TIMEBOXES
+                    }]
+                },
+                getOptions: function () {
+                    return [{
+                        text: "About...",
+                        handler: this._launchInfo,
+                        scope: this
+                    }]
+                },
+                _launchInfo: function () {
+                    this.about_dialog && this.about_dialog.destroy(), this.about_dialog = Ext.create(
+                        "Rally.technicalservices.InfoLink", {})
+                },
+                isExternal: function () {
+                    return "undefined" == typeof this.getAppId()
+                }
+            });
+
+            Rally.launchApp('workitem-throughput', {
+                name: 'Work Item Throughput'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+        .app {}
+
+        .tsinfolink {
+            position: absolute;
+            right: 0px;
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            text-align: center;
+            color: white;
+            background: #C0C0C0;
+            border-style: solid;
+            border-width: 1px;
+            margin-top: 25px;
+            margin-right: 5px;
+            cursor: pointer;
+        }
+    </style>
+
+</head>
+
+<body></body>
+
+</html>

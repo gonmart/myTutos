@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Schedule State - Time In State - With Chart</title>
+
+    <script type="text/javascript" src="/apps/2.0/sdk-debug.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+    <script type="text/javascript" charset="utf8" src="//cdn.datatables.net/1.10.5/js/jquery.dataTables.js"></script>
+    <script type="text/javascript" src="//cdn.datatables.net/tabletools/2.2.3/js/dataTables.tableTools.min.js"></script>
+    <script type="text/javascript" src="//cdn.datatables.net/fixedcolumns/3.0.4/js/dataTables.fixedColumns.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="//cdn.datatables.net/1.10.5/css/jquery.dataTables.css">
+    <link rel="stylesheet" type="text/css" href="//cdn.datatables.net/tabletools/2.2.3/css/dataTables.tableTools.min.css">
+    <link rel="stylesheet" type="text/css" href="//cdn.datatables.net/fixedcolumns/3.0.4/css/dataTables.fixedColumns.css">
+    <script type="text/javascript">
+        Rally.onReady(function () {
+
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+                items: [{
+                        xtype: 'container',
+                        itemId: 'settings_box',
+                        height: 75
+                    },
+                    {
+                        xtype: 'container',
+                        itemId: 'display_box',
+                        height: 200
+                    }
+                ],
+                /*onTimeboxScopeChange: function(newTimeboxScope) {
+                	if (this.down('#summaryData')){
+                		this.down('#summaryData').destroy();
+                	}
+                	if (this.down('#summaryData2')){
+                		this.down('#summaryData2').destroy();
+                	}
+                	//Get page iteration setting
+                	//var iterationScope = this.getContext().getTimeboxScope();
+                	var name, startDate, daysBack;
+                	name = null;
+                	daysBack = null;
+                	if (newTimeboxScope && newTimeboxScope.getRecord() !== null) {
+                		var record = newTimeboxScope.getRecord();
+                		name = record.get('Name');
+                		startDate = record.get('StartDate');
+                		endDate = record.get('EndDate');
+                		this._collectIterations(name,startDate,endDate);
+                	}
+                	else {
+                		alert('Please select an Iteration (not "Unscheduled")');
+                	}
+                },*/
+                launch: function () {
+                    window.console && console.info('Test');
+
+                    //Get page iteration setting
+                    /*var iterationScope = this.getContext().getTimeboxScope();
+                    var name, startDate, daysBack;
+                    name = null;
+                    daysBack = null;
+                    if (iterationScope && iterationScope.getRecord() !== null) {
+                    	var record = iterationScope.getRecord();
+                    	name = record.get('Name');
+                    	startDate = record.get('StartDate');
+                    	endDate = record.get('EndDate');
+                    	this._collectIterations(name,startDate,endDate);
+                    }
+                    else {
+                    	alert('Please select an Iteration (not "Unscheduled")');
+                    }*/
+
+                    this.down('#settings_box').add({
+                        xtype: 'rallybutton',
+                        itemId: 'button1',
+                        margin: '20 0 20 0',
+                        text: 'Run',
+                        scope: this,
+                        handler: function () {
+                            if (this.pleaseWait) {
+                                this.pleaseWait.hide();
+                            }
+                            if (this.pleaseWait2) {
+                                this.pleaseWait2.hide();
+                            }
+                            if (this.down('#summaryData')) {
+                                this.down('#summaryData').destroy();
+                            }
+                            if (this.down('#summaryData2')) {
+                                this.down('#summaryData2').destroy();
+                            }
+                            if (this.down('#summaryData3')) {
+                                this.down('#summaryData3').destroy();
+                            }
+                            if (this.down('#cycleTimeChart')) {
+                                this.down('#cycleTimeChart').destroy();
+                            }
+                            this.pleaseWait = new Ext.LoadMask(this.down('#display_box'), {
+                                msg: "Please wait..."
+                            });
+                            this.pleaseWait.show();
+                            this.pleaseWait2 = new Ext.LoadMask(this.down(
+                                '#settings_box'), {
+                                msg: "Please wait..."
+                            });
+                            this.pleaseWait2.show();
+                            this._queryScheduleStateHistory();
+                        }
+                    });
+
+
+                },
+
+                _collectIterations: function (name, startDate, endDate) {
+
+                    Ext.create('Rally.data.wsapi.Store', {
+                        model: 'Iteration',
+                        listeners: {
+                            load: function (store, data, success) {
+                                var iterationArray = [];
+                                Ext.Array.each(data, function (record) {
+                                    iterationArray.push(record.raw.ObjectID);
+                                });
+                                if (iterationArray.length === 0) {
+                                    iterationArray = null;
+                                }
+                                this._queryScheduleStateHistory(name, iterationArray,
+                                    startDate, endDate);
+                            },
+                            scope: this
+                        },
+                        limit: Infinity,
+                        //pageSize: 20,
+                        autoLoad: true,
+                        fetch: ['Name', 'ObjectID', 'StartDate', 'EndDate'],
+                        filters: [{
+                            property: 'Name',
+                            operator: '=',
+                            value: name
+                        }],
+                        context: this.getContext().getDataContext()
+                    });
+                },
+
+                _queryScheduleStateHistory: function () {
+                    this.pleaseWait.msg = "Loading Snapshot API Data (this may take a few minutes)";
+                    this.pleaseWait.hide();
+                    this.pleaseWait.show();
+                    Ext.create('Rally.data.lookback.SnapshotStore', {
+                        listeners: {
+                            scope: this,
+                            load: function (store, data, success) {
+                                this.pleaseWait.msg =
+                                    "Snapshot API Data Loaded; Sorting and Comparing Against Real-Time Data";
+                                this.pleaseWait.hide();
+                                this.pleaseWait.show();
+                                this._sortByStory(data);
+                                //window.console && console.log(data);
+                            }
+                        },
+                        autoLoad: true,
+                        pageSize: 10000,
+                        fetch: ['FormattedID', 'Name', 'Iteration', 'Name', 'Project',
+                            '_ValidFrom', '_ValidTo', '_RevisionNumber',
+                            'ScheduleState', '_PreviousValues.ScheduleState'
+                        ],
+                        hydrate: ['Iteration', 'Project', 'ScheduleState',
+                            '_PreviousValues.ScheduleState'
+                        ],
+                        sort: {
+                            _ValidFrom: 1
+                        },
+                        context: this.getContext().getDataContext(),
+                        limit: Infinity,
+                        find: {
+                            _TypeHierarchy: 'HierarchicalRequirement',
+                            Children: null,
+                            //Iteration: iterationArray === null ? null : {$in: iterationArray},
+                            _ProjectHierarchy: this.getContext().getProject().ObjectID,
+                            $or: [{
+                                    '_PreviousValues.ScheduleState': {
+                                        '$lte': 'Defined',
+                                        '$exists': true
+                                    },
+                                    ScheduleState: {
+                                        '$gte': 'Defined'
+                                    }
+                                }, //Initial creation to Defined, or Defined to beyond
+                                {
+                                    '_PreviousValues.ScheduleState': {
+                                        '$lte': 'In-Progress',
+                                        '$exists': true
+                                    },
+                                    ScheduleState: {
+                                        '$gte': 'In-Progress'
+                                    }
+                                }, //pre-In-Progress to In-Progress, or In-Progress to beyond
+                                {
+                                    '_PreviousValues.ScheduleState': {
+                                        '$lte': 'Completed',
+                                        '$exists': true
+                                    },
+                                    ScheduleState: {
+                                        '$gte': 'Completed'
+                                    }
+                                }, //pre-Completed to Completed, or Completed to Accepted (or beyond, if applicable)
+                                {
+                                    '_PreviousValues.ScheduleState': {
+                                        '$gte': 'Completed',
+                                        '$exists': true
+                                    },
+                                    ScheduleState: {
+                                        '$lte': 'Completed'
+                                    }
+                                }, //backward to or through Completed
+                                {
+                                    '_PreviousValues.ScheduleState': {
+                                        '$gte': 'In-Progress',
+                                        '$exists': true
+                                    },
+                                    ScheduleState: {
+                                        '$lte': 'In-Progress'
+                                    }
+                                }, //backward to or through In-Progress
+                                {
+                                    '_PreviousValues.ScheduleState': {
+                                        '$gte': 'Defined',
+                                        '$exists': true
+                                    },
+                                    ScheduleState: {
+                                        '$lte': 'Defined'
+                                    }
+                                } //backward to or through Defined
+                            ]
+                        }
+                    });
+                },
+
+                _sortByStory: function (data) {
+                    var artifactArray = [];
+                    var breaker;
+                    for (var a = 0; a < data.length; a++) {
+                        breaker = false;
+                        for (var b = 0; b < artifactArray.length; b++) {
+                            if (artifactArray[b].FormattedID === data[a].raw.FormattedID) {
+                                artifactArray[b].latestSnapshot = data[a].raw;
+                                artifactArray[b].Project = data[a].raw.Project.Name; //Ensure Project is set to the latest value
+                                artifactArray[b].Iteration = data[a].raw.Iteration && data[a].raw.Iteration !==
+                                    null ? data[a].raw.Iteration.Name : null; //Ensure Iteration is set to the latest value
+                                breaker = true;
+                                this._bucketizeSnapshotResults(b, data, a, artifactArray);
+                                break;
+                            }
+                        }
+                        if (!breaker) {
+                            artifactArray.push({
+                                FormattedID: data[a].raw.FormattedID,
+                                Name: data[a].raw.Name,
+                                Project: data[a].raw.Project.Name,
+                                Iteration: data[a].raw.Iteration && data[a].raw.Iteration !==
+                                    null ? data[a].raw.Iteration.Name : null,
+                                definedStart: null,
+                                definedEnd: null,
+                                inProgressStart: null,
+                                inProgressEnd: null,
+                                completedStart: null,
+                                completedEnd: null,
+                                latestSnapshot: data[a].raw
+                            });
+                            this._bucketizeSnapshotResults(artifactArray.length - 1, data, a,
+                                artifactArray);
+                        }
+                    }
+
+                    //window.console && console.info('artifactArray:');
+                    //window.console && console.log(artifactArray);
+
+                    this._processSnapshotData(artifactArray);
+                },
+
+                _bucketizeSnapshotResults: function (arrayElem, data, dataElem, artifactArray) {
+                    //
+                    //Check for forward state progression
+                    //
+                    /*Defined*/
+                    if (data[dataElem].raw._PreviousValues.ScheduleState === null && data[dataElem]
+                        .raw.ScheduleState === "Defined") {
+                        //Story creation, start the "Defined" clock
+                        artifactArray[arrayElem].definedStart = data[dataElem].raw._ValidFrom;
+                    } else if (data[dataElem].raw._PreviousValues.ScheduleState === null &&
+                        (data[dataElem].raw.ScheduleState === "In-Progress" || data[dataElem].raw.ScheduleState ===
+                            "Completed" || data[dataElem].raw.ScheduleState === "Accepted")) {
+                        //Story creation, but moved past "Defined" right away. Start and end the "Defined" clock
+                        artifactArray[arrayElem].definedStart = data[dataElem].raw._ValidFrom;
+                        artifactArray[arrayElem].definedEnd = data[dataElem].raw._ValidFrom;
+                    } else if (data[dataElem].raw._PreviousValues.ScheduleState === "Defined" &&
+                        (data[dataElem].raw.ScheduleState === "In-Progress" || data[dataElem].raw.ScheduleState ===
+                            "Completed" || data[dataElem].raw.ScheduleState === "Accepted")) {
+                        //Story moved forward out of "Defined", end the "Defined" clock
+                        artifactArray[arrayElem].definedEnd = data[dataElem].raw._ValidFrom;
+                    }
+                    /*In-Progress*/
+                    if ((data[dataElem].raw._PreviousValues.ScheduleState === "Defined" || data[
+                            dataElem].raw._PreviousValues.ScheduleState === null) && data[dataElem]
+                        .raw.ScheduleState === "In-Progress") {
+                        //Story moved forward to "In-Progress", start the "In-Progress" clock
+                        artifactArray[arrayElem].inProgressStart = data[dataElem].raw._ValidFrom;
+                    } else if ((data[dataElem].raw._PreviousValues.ScheduleState === "Defined" ||
+                            data[dataElem].raw._PreviousValues.ScheduleState === null) &&
+                        (data[dataElem].raw.ScheduleState === "Completed" || data[dataElem].raw.ScheduleState ===
+                            "Accepted")) {
+                        //Story moved forward, through "In-Progress" to a later state. Start and end the "In-Progress" clock
+                        artifactArray[arrayElem].inProgressStart = data[dataElem].raw._ValidFrom;
+                        artifactArray[arrayElem].inProgressEnd = data[dataElem].raw._ValidFrom;
+                    } else if (data[dataElem].raw._PreviousValues.ScheduleState === "In-Progress" &&
+                        (data[dataElem].raw.ScheduleState === "Completed" || data[dataElem].raw.ScheduleState ===
+                            "Accepted")) {
+                        //Story moved forward out of "In-Progress", end the "In-Progress" clock
+                        artifactArray[arrayElem].inProgressEnd = data[dataElem].raw._ValidFrom;
+                    }
+                    /*Completed*/
+                    if ((data[dataElem].raw._PreviousValues.ScheduleState === "In-Progress" || data[
+                            dataElem].raw._PreviousValues.ScheduleState === "Defined" || data[
+                            dataElem].raw._PreviousValues.ScheduleState === null) &&
+                        (data[dataElem].raw.ScheduleState === "Completed")) {
+                        //Story moved forward to "Completed", start the "Completed" clock
+                        artifactArray[arrayElem].completedStart = data[dataElem].raw._ValidFrom;
+                    } else if ((data[dataElem].raw._PreviousValues.ScheduleState === "In-Progress" ||
+                            data[dataElem].raw._PreviousValues.ScheduleState === "Defined" || data[
+                                dataElem].raw._PreviousValues.ScheduleState === null) &&
+                        (data[dataElem].raw.ScheduleState === "Accepted")) {
+                        //Story moved forward, through "Completed" to "Accepted". Start and end the "Completed" clock
+                        artifactArray[arrayElem].completedStart = data[dataElem].raw._ValidFrom;
+                        artifactArray[arrayElem].completedEnd = data[dataElem].raw._ValidFrom;
+                    } else if (data[dataElem].raw._PreviousValues.ScheduleState === "Completed" &&
+                        (data[dataElem].raw.ScheduleState === "Accepted")) {
+                        //Story moved forward out of "Completed", end the "Completed" clock
+                        artifactArray[arrayElem].completedEnd = data[dataElem].raw._ValidFrom;
+                    }
+                    //
+                    //Check for backward state progression
+                    //
+                    /*Completed*/
+                    if (data[dataElem].raw._PreviousValues.ScheduleState === "Accepted" && data[
+                            dataElem].raw.ScheduleState === "Completed") {
+                        //Story moved backward to "Completed", reset "Completed" start (and remove "Completed" end)
+                        artifactArray[arrayElem].completedEnd = null;
+                        artifactArray[arrayElem].completedStart = data[dataElem].raw._ValidFrom;
+                    } else if (data[dataElem].raw._PreviousValues.ScheduleState === "Accepted" &&
+                        (data[dataElem].raw.ScheduleState === "In-Progress" || data[dataElem].raw.ScheduleState ===
+                            "Defined")) {
+                        //Story moved backward through "Completed" to a prior state, remove the "Completed" start and end
+                        artifactArray[arrayElem].completedEnd = null;
+                        artifactArray[arrayElem].completedStart = null;
+                    } else if (data[dataElem].raw._PreviousValues.ScheduleState === "Completed" &&
+                        (data[dataElem].raw.ScheduleState === "In-Progress" || data[dataElem].raw.ScheduleState ===
+                            "Defined")) {
+                        //Story moved backward from "Completed" to a prior state, remove the "Completed" start
+                        artifactArray[arrayElem].completedStart = null;
+                    }
+                    /*In-Progress*/
+                    if ((data[dataElem].raw._PreviousValues.ScheduleState === "Accepted" || data[
+                            dataElem].raw._PreviousValues.ScheduleState === "Completed") &&
+                        (data[dataElem].raw.ScheduleState === "In-Progress")) {
+                        //Story moved backward to "In-Progress", reset "In-Progress" start (and remove "In-Progress" end)
+                        artifactArray[arrayElem].inProgressEnd = null;
+                        artifactArray[arrayElem].inProgressStart = data[dataElem].raw._ValidFrom;
+                    } else if ((data[dataElem].raw._PreviousValues.ScheduleState === "Accepted" ||
+                            data[dataElem].raw._PreviousValues.ScheduleState === "Completed") &&
+                        (data[dataElem].raw.ScheduleState === "Defined")) {
+                        //Story moved backward through "In-Progress" to "Defined", remove the "In-Progress" start and end
+                        artifactArray[arrayElem].inProgressEnd = null;
+                        artifactArray[arrayElem].inProgressStart = null;
+                    } else if (data[dataElem].raw._PreviousValues.ScheduleState === "In-Progress" &&
+                        (data[dataElem].raw.ScheduleState === "Defined")) {
+                        //Story moved backward from "In-Progress" to "Defined", remove the "In-Progress" start
+                        artifactArray[arrayElem].inProgressStart = null;
+                    }
+                    /*Defined*/
+                    if ((data[dataElem].raw._PreviousValues.ScheduleState === "Accepted" || data[
+                            dataElem].raw._PreviousValues.ScheduleState === "Completed" || data[
+                            dataElem].raw._PreviousValues.ScheduleState === "In-Progress") &&
+                        (data[dataElem].raw.ScheduleState === "Defined")) {
+                        //Story moved backward to "Defined", reset "Defined" start (and remove "Defined" end)
+                        artifactArray[arrayElem].definedEnd = null;
+                        artifactArray[arrayElem].definedStart = data[dataElem].raw._ValidFrom;
+                    }
+                },
+
+                _processSnapshotData: function (artifactArray) {
+                    for (var a = 0; a < artifactArray.length; a++) {
+                        artifactArray[a].TimeDefined = artifactArray[a].definedEnd !== null &&
+                            artifactArray[a].definedStart !== null && Rally.util.DateTime.fromIsoString(
+                                artifactArray[a].definedEnd).getTime() - Rally.util.DateTime.fromIsoString(
+                                artifactArray[a].definedStart).getTime() >= 0 ? this.roundNumber((
+                                Rally.util.DateTime.fromIsoString(artifactArray[a].definedEnd).getTime() -
+                                Rally.util.DateTime.fromIsoString(artifactArray[a].definedStart)
+                                .getTime()) / (1000 * 60 * 60 * 24), 2) : 'N/A';
+                        artifactArray[a].TimeInProgress = artifactArray[a].inProgressEnd !== null &&
+                            artifactArray[a].inProgressStart !== null && Rally.util.DateTime.fromIsoString(
+                                artifactArray[a].inProgressEnd).getTime() - Rally.util.DateTime.fromIsoString(
+                                artifactArray[a].inProgressStart).getTime() >= 0 ? this.roundNumber(
+                                (Rally.util.DateTime.fromIsoString(artifactArray[a].inProgressEnd).getTime() -
+                                    Rally.util.DateTime.fromIsoString(artifactArray[a].inProgressStart)
+                                    .getTime()) / (1000 * 60 * 60 * 24), 2) : 'N/A';
+                        artifactArray[a].TimeCompleted = artifactArray[a].completedEnd !== null &&
+                            artifactArray[a].completedStart !== null && Rally.util.DateTime.fromIsoString(
+                                artifactArray[a].completedEnd).getTime() - Rally.util.DateTime.fromIsoString(
+                                artifactArray[a].completedStart).getTime() >= 0 ? this.roundNumber(
+                                (Rally.util.DateTime.fromIsoString(artifactArray[a].completedEnd).getTime() -
+                                    Rally.util.DateTime.fromIsoString(artifactArray[a].completedStart)
+                                    .getTime()) / (1000 * 60 * 60 * 24), 2) : 'N/A';
+
+                        //Remove that array element if all times are 'N/A'
+                        /*if (rawDataTableArray[rawDataTableArray.length-1].TimeDefined === 'N/A' && rawDataTableArray[rawDataTableArray.length-1].TimeInProgress === 'N/A' && rawDataTableArray[rawDataTableArray.length-1].TimeCompleted === 'N/A'){
+                        	rawDataTableArray.splice(rawDataTableArray.length-1,1);
+                        }*/
+                    }
+
+                    this._getIterationCurrentStories(artifactArray);
+                },
+
+                _getIterationCurrentStories: function (artifactArray) {
+                    Ext.create('Rally.data.wsapi.Store', {
+                        model: 'User Story',
+                        listeners: {
+                            load: function (store, data, success) {
+                                var APIEpicArray = [];
+                                if (data.length === 0) {
+                                    this._generateAverages(artifactArray);
+                                } else {
+                                    var breaker;
+                                    for (var a = 0; a < artifactArray.length; a++) {
+                                        //Check for FormattedID match, and if not found, remove the element from artifactArray
+                                        breaker = false;
+                                        for (var b = 0; b < data.length; b++) {
+                                            if (artifactArray[a].FormattedID === data[b]
+                                                .raw.FormattedID) {
+                                                artifactArray[a].Iteration = data[b].raw
+                                                    .Iteration.Name;
+                                                breaker = true;
+                                                break;
+                                            }
+                                        }
+                                        if (!breaker) {
+                                            artifactArray.splice(a, 1);
+                                            a--;
+                                        }
+                                    }
+                                    this._generateAverages(artifactArray);
+                                }
+                            },
+                            scope: this
+                        },
+                        limit: Infinity,
+                        //pageSize: 20,
+                        autoLoad: true,
+                        fetch: ['Name', 'ObjectID', 'FormattedID', 'CreationDate',
+                            'InProgressDate', 'Iteration'
+                        ],
+                        filters: [{
+                                property: 'Iteration.StartDate',
+                                operator: '>=',
+                                value: '2014-12-30'
+                            },
+                            {
+                                property: 'Iteration.StartDate',
+                                operator: '<=',
+                                value: Rally.util.DateTime.toIsoString(new Date())
+                            }
+                        ],
+                        context: this.getContext().getDataContext()
+                    });
+                },
+
+                _generateAverages: function (artifactArray) {
+                    this.pleaseWait.msg = "Generating Averages";
+                    this.pleaseWait.hide();
+                    this.pleaseWait.show();
+
+                    var iterationArray = [];
+                    //Add data to projectAverageTableArray
+                    var projectAverageTableArray = [];
+                    for (var a = 0; a < artifactArray.length; a++) {
+                        breaker = false;
+                        for (var b = 0; b < projectAverageTableArray.length; b++) {
+                            if (projectAverageTableArray[b].Iteration === artifactArray[a].Iteration &&
+                                projectAverageTableArray[b].Project === artifactArray[a].Project) {
+                                //Found a matching Iteration and Project, add data to this array element
+                                if (artifactArray[a].definedEnd !== null && artifactArray[a].definedStart !==
+                                    null && Rally.util.DateTime.fromIsoString(artifactArray[a].definedEnd)
+                                    .getTime() - Rally.util.DateTime.fromIsoString(artifactArray[a]
+                                        .definedStart).getTime() > 0) {
+                                    projectAverageTableArray[b].SumDefined += Rally.util.DateTime.fromIsoString(
+                                            artifactArray[a].definedEnd).getTime() - Rally.util.DateTime
+                                        .fromIsoString(artifactArray[a].definedStart).getTime();
+                                    projectAverageTableArray[b].CountDefined++;
+                                }
+                                if (artifactArray[a].inProgressEnd !== null && artifactArray[a].inProgressStart !==
+                                    null && Rally.util.DateTime.fromIsoString(artifactArray[a].inProgressEnd)
+                                    .getTime() - Rally.util.DateTime.fromIsoString(artifactArray[a]
+                                        .inProgressStart).getTime() > 0) {
+                                    projectAverageTableArray[b].SumInProgress += Rally.util.DateTime
+                                        .fromIsoString(artifactArray[a].inProgressEnd).getTime() -
+                                        Rally.util.DateTime.fromIsoString(artifactArray[a].inProgressStart)
+                                        .getTime();
+                                    projectAverageTableArray[b].CountInProgress++;
+                                }
+                                if (artifactArray[a].completedEnd !== null && artifactArray[a].completedStart !==
+                                    null && Rally.util.DateTime.fromIsoString(artifactArray[a].completedEnd)
+                                    .getTime() - Rally.util.DateTime.fromIsoString(artifactArray[a]
+                                        .completedStart).getTime() > 0) {
+                                    projectAverageTableArray[b].SumCompleted += Rally.util.DateTime
+                                        .fromIsoString(artifactArray[a].completedEnd).getTime() -
+                                        Rally.util.DateTime.fromIsoString(artifactArray[a].completedStart)
+                                        .getTime();
+                                    projectAverageTableArray[b].CountCompleted++;
+                                }
+                                breaker = true;
+                                break;
+                            }
+                        }
+                        if (!breaker) {
+                            //No matching Project-Iteration combo yet, so push a new array element
+                            projectAverageTableArray.push({
+                                Project: artifactArray[a].Project,
+                                Iteration: artifactArray[a].Iteration,
+                                AvgDefined: null,
+                                AvgInProgress: null,
+                                AvgCompleted: null,
+                                SumDefined: 0,
+                                SumInProgress: 0,
+                                SumCompleted: 0,
+                                CountDefined: 0,
+                                CountInProgress: 0,
+                                CountCompleted: 0
+                            });
+                            //While we're doing this, check for a new Iteration name and push to iterationArray if indeed new
+                            breaker = false;
+                            for (var b = 0; b < iterationArray.length; b++) {
+                                if (iterationArray[b] === artifactArray[a].Iteration) {
+                                    breaker = true;
+                                    break;
+                                }
+                            }
+                            if (!breaker) {
+                                iterationArray.push(artifactArray[a].Iteration);
+                            }
+                        }
+                    }
+
+                    //Now that that's all done, loop back through projectAverageTableArray and calculate the averages
+                    for (var a = 0; a < projectAverageTableArray.length; a++) {
+                        projectAverageTableArray[a].AvgDefined = projectAverageTableArray[a].CountDefined >
+                            0 ? this.roundNumber(projectAverageTableArray[a].SumDefined /
+                                projectAverageTableArray[a].CountDefined / (1000 * 60 * 60 * 24), 2
+                            ) : null;
+                        projectAverageTableArray[a].AvgInProgress = projectAverageTableArray[a].CountInProgress >
+                            0 ? this.roundNumber(projectAverageTableArray[a].SumInProgress /
+                                projectAverageTableArray[a].CountInProgress / (1000 * 60 * 60 * 24),
+                                2) : null;
+                        projectAverageTableArray[a].AvgCompleted = projectAverageTableArray[a].CountCompleted >
+                            0 ? this.roundNumber(projectAverageTableArray[a].SumCompleted /
+                                projectAverageTableArray[a].CountCompleted / (1000 * 60 * 60 * 24),
+                                2) : null;
+                    }
+                    //Order the iterationArray alphabetically, which should also order them chronologically
+                    iterationArray.sort();
+
+                    this._sortAveragesIntoBuckets(projectAverageTableArray, artifactArray,
+                        iterationArray);
+                },
+
+                _sortAveragesIntoBuckets: function (projectAverageTableArray, artifactArray,
+                    iterationArray) {
+                    //Set up chart data
+                    var iterationAverages = [];
+                    var averageArray_chart = {
+                        categories: iterationArray,
+                        series: [{
+                            name: 'Defined',
+                            data: []
+                        }, {
+                            name: 'In-Progress',
+                            data: []
+                        }, {
+                            name: 'Completed',
+                            data: []
+                        }]
+                    };
+                    for (var a = 0; a < iterationArray.length; a++) {
+                        iterationAverages.push({
+                            Name: iterationArray[a],
+                            AvgDefined: 0,
+                            AvgInProgress: 0,
+                            AvgCompleted: 0,
+                            SumDefined: 0,
+                            SumInProgress: 0,
+                            SumCompleted: 0,
+                            CountDefined: 0,
+                            CountInProgress: 0,
+                            CountCompleted: 0
+                        });
+                        for (var b = 0; b < projectAverageTableArray.length; b++) {
+                            if (iterationArray[a] === projectAverageTableArray[b].Iteration) {
+                                iterationAverages[a].SumDefined += projectAverageTableArray[b].SumDefined;
+                                iterationAverages[a].SumInProgress += projectAverageTableArray[b].SumInProgress;
+                                iterationAverages[a].SumCompleted += projectAverageTableArray[b].SumCompleted;
+                                iterationAverages[a].CountDefined += projectAverageTableArray[b].CountDefined;
+                                iterationAverages[a].CountInProgress += projectAverageTableArray[b]
+                                    .CountInProgress;
+                                iterationAverages[a].CountCompleted += projectAverageTableArray[b].CountCompleted;
+                            }
+                        }
+                        iterationAverages[a].AvgDefined = iterationAverages[a].CountDefined > 0 ?
+                            this.roundNumber(iterationAverages[a].SumDefined / iterationAverages[a]
+                                .CountDefined / (1000 * 60 * 60 * 24), 2) : null;
+                        iterationAverages[a].AvgInProgress = iterationAverages[a].CountInProgress >
+                            0 ? this.roundNumber(iterationAverages[a].SumInProgress /
+                                iterationAverages[a].CountInProgress / (1000 * 60 * 60 * 24), 2) :
+                            null;
+                        iterationAverages[a].AvgCompleted = iterationAverages[a].CountCompleted > 0 ?
+                            this.roundNumber(iterationAverages[a].SumCompleted / iterationAverages[
+                                a].CountCompleted / (1000 * 60 * 60 * 24), 2) : null;
+
+                        //Push the results to the chart array
+                        averageArray_chart.series[0].data.push(parseFloat(iterationAverages[a].AvgDefined ===
+                            null ? 0 : iterationAverages[a].AvgDefined));
+                        averageArray_chart.series[1].data.push(parseFloat(iterationAverages[a].AvgInProgress ===
+                            null ? 0 : iterationAverages[a].AvgInProgress));
+                        averageArray_chart.series[2].data.push(parseFloat(iterationAverages[a].AvgCompleted ===
+                            null ? 0 : iterationAverages[a].AvgCompleted));
+                    }
+
+                    //Set up project table array
+                    var projectAverages = [];
+                    var breaker;
+                    for (var a = 0; a < projectAverageTableArray.length; a++) {
+                        breaker = false;
+                        for (var b = 0; b < projectAverages.length; b++) {
+                            if (projectAverageTableArray[a].Project === projectAverages[b].Project) {
+                                projectAverages[b].SumDefined += projectAverageTableArray[a].SumDefined;
+                                projectAverages[b].SumInProgress += projectAverageTableArray[a].SumInProgress;
+                                projectAverages[b].SumCompleted += projectAverageTableArray[a].SumCompleted;
+                                projectAverages[b].CountDefined += projectAverageTableArray[a].CountDefined;
+                                projectAverages[b].CountInProgress += projectAverageTableArray[a].CountInProgress;
+                                projectAverages[b].CountCompleted += projectAverageTableArray[a].CountCompleted;
+                                breaker = true;
+                                break;
+                            }
+                        }
+                        if (!breaker) {
+                            projectAverages.push({
+                                Project: projectAverageTableArray[a].Project,
+                                AvgDefined: 0,
+                                AvgInProgress: 0,
+                                AvgCompleted: 0,
+                                SumDefined: projectAverageTableArray[a].SumDefined,
+                                SumInProgress: projectAverageTableArray[a].SumInProgress,
+                                SumCompleted: projectAverageTableArray[a].SumCompleted,
+                                CountDefined: projectAverageTableArray[a].CountDefined,
+                                CountInProgress: projectAverageTableArray[a].CountInProgress,
+                                CountCompleted: projectAverageTableArray[a].CountCompleted
+                            });
+                        }
+                    }
+                    //Now calculate the averages for each Project
+                    for (var a = 0; a < projectAverages.length; a++) {
+                        projectAverages[a].AvgDefined = projectAverages[a].CountDefined > 0 ? this.roundNumber(
+                            projectAverages[a].SumDefined / projectAverages[a].CountDefined / (
+                                1000 * 60 * 60 * 24), 2) : null;
+                        projectAverages[a].AvgInProgress = projectAverages[a].CountInProgress > 0 ?
+                            this.roundNumber(projectAverages[a].SumInProgress / projectAverages[a].CountInProgress /
+                                (1000 * 60 * 60 * 24), 2) : null;
+                        projectAverages[a].AvgCompleted = projectAverages[a].CountCompleted > 0 ?
+                            this.roundNumber(projectAverages[a].SumCompleted / projectAverages[a].CountCompleted /
+                                (1000 * 60 * 60 * 24), 2) : null;
+                    }
+
+                    //Rearrange projectAverageTableArray so that the table data is in the correct order/format
+                    var iterationVars = [];
+                    for (var a = 0; a < iterationAverages.length; a++) {
+                        iterationVars.push(iterationAverages[a].Name + "Defined");
+                        iterationVars.push(iterationAverages[a].Name + "InProgress");
+                        iterationVars.push(iterationAverages[a].Name + "Completed");
+                    }
+                    var iterationProjectAverages = [];
+                    var breaker;
+                    for (var a = 0; a < projectAverageTableArray.length; a++) {
+                        breaker = false;
+                        for (var b = 0; b < iterationProjectAverages.length; b++) {
+                            if (iterationProjectAverages[b].Project === projectAverageTableArray[a]
+                                .Project) {
+                                //Figure out which iteration this element is for and add to the appropriate value
+                                iterationProjectAverages[b][projectAverageTableArray[a].Iteration +
+                                    "Defined"
+                                ] = projectAverageTableArray[a].AvgDefined;
+                                iterationProjectAverages[b][projectAverageTableArray[a].Iteration +
+                                    "InProgress"
+                                ] = projectAverageTableArray[a].AvgInProgress;
+                                iterationProjectAverages[b][projectAverageTableArray[a].Iteration +
+                                    "Completed"
+                                ] = projectAverageTableArray[a].AvgCompleted;
+                                breaker = true;
+                                break;
+                            }
+                        }
+                        if (!breaker) {
+                            //Create new row for Project
+                            iterationProjectAverages.push({
+                                Project: projectAverageTableArray[a].Project
+                            });
+                            for (var c = 0; c < iterationVars.length; c++) {
+                                iterationProjectAverages[iterationProjectAverages.length - 1][
+                                    iterationVars[c]
+                                ] = null;
+                            }
+                            //Figure out which iteration this element is for and add to the appropriate value
+                            iterationProjectAverages[iterationProjectAverages.length - 1][
+                                projectAverageTableArray[a].Iteration + "Defined"
+                            ] = projectAverageTableArray[a].AvgDefined;
+                            iterationProjectAverages[iterationProjectAverages.length - 1][
+                                projectAverageTableArray[a].Iteration + "InProgress"
+                            ] = projectAverageTableArray[a].AvgInProgress;
+                            iterationProjectAverages[iterationProjectAverages.length - 1][
+                                projectAverageTableArray[a].Iteration + "Completed"
+                            ] = projectAverageTableArray[a].AvgCompleted;
+                        }
+
+                    }
+
+                    this._createTable(iterationAverages, projectAverages, iterationProjectAverages,
+                        projectAverageTableArray, artifactArray, averageArray_chart,
+                        iterationVars);
+                },
+
+                _createTable: function (iterationAverages, projectAverages, iterationProjectAverages,
+                    projectAverageTableArray, artifactArray, averageArray_chart, iterationVars) {
+                    this.pleaseWait.msg = "Loading Chart and Tables";
+                    this.pleaseWait.hide();
+                    this.pleaseWait.show();
+
+                    /*window.console && console.info('iterationAverages:');
+                    window.console && console.log(iterationAverages);
+                    window.console && console.info('projectAverageTableArray:');
+                    window.console && console.log(projectAverageTableArray);
+                    window.console && console.info('artifactArray:');
+                    window.console && console.log(artifactArray);
+                    window.console && console.info('averageArray_chart:');
+                    window.console && console.log(averageArray_chart);*/
+
+                    this.down('#display_box').add({
+                        xtype: 'rallychart',
+                        itemId: 'cycleTimeChart',
+                        chartData: averageArray_chart,
+                        //chartColors: ["#00B82E", "#FF4747"],
+                        loadMask: false,
+                        chartConfig: {
+                            exporting: {
+                                enabled: true,
+                                url: 'https://export.highcharts.com/',
+                                filename: 'CycleTimeChart',
+                                sourceWidth: 1000
+                            },
+                            navigation: {
+                                buttonOptions: {
+                                    align: 'left'
+                                }
+                            },
+                            chart: {
+                                zoomType: 'x',
+                                type: 'column'
+                            },
+                            title: {
+                                text: 'Iteration Cycle Time: ' + this.getContext().getProject()
+                                    .Name
+                            },
+                            xAxis: {
+                                tickmarkPlacement: 'on',
+                                tickInterval: 1,
+                                type: 'datetime',
+                                dateTimeLabelFormats: {
+                                    day: '%b %e'
+                                },
+                                title: {
+                                    text: 'Iterations/Sprints'
+                                }
+                            },
+                            yAxis: [{
+                                title: {
+                                    text: 'Cycle Time (days)'
+                                }
+                            }]
+                        }
+                    });
+
+                    var projectHeaders = '';
+                    var projectTopHeaders = '<th rowspan="2">Project</th>';
+                    var columnArray = [{
+                        data: 'Project',
+                        className: "dt-body-center"
+                    }];
+                    for (var a = 0; a < iterationVars.length; a++) {
+                        columnArray.push({
+                            data: iterationVars[a],
+                            className: "dt-body-center"
+                        });
+                    }
+                    for (var a = 0; a < iterationAverages.length; a++) {
+                        projectTopHeaders = projectTopHeaders + '<th colspan="3">' +
+                            iterationAverages[a].Name + '</th>';
+                        projectHeaders = projectHeaders +
+                            '<th>Average Defined Time</th><th>Average In-Progress Time</th><th>Average Completed Time</th>';
+                    }
+
+                    var html3 =
+                        '<table id="iterationProjectAverages" class="display" cellspacing="0" width="100%">' +
+                        '<thead>' +
+                        '<tr>' +
+                        projectTopHeaders +
+                        '</tr>' +
+                        '<tr>' +
+                        projectHeaders +
+                        '</tr>' +
+                        '</thead>' +
+                        '</table>';
+
+                    this.down('#display_box').add({
+                        xtype: 'panel',
+                        itemId: 'summaryData3',
+                        title: 'Sprint-by-Sprint Project Cycle Time Averages (by State)',
+                        height: 530,
+                        html: html3
+                    });
+
+                    var longTable = $('#iterationProjectAverages').DataTable({
+                        data: iterationProjectAverages,
+                        dom: 'T<"clear">lfrtip',
+                        "scrollY": "300px",
+                        "scrollCollapse": true,
+                        "scrollX": "100%",
+                        //"paging": false,
+                        tableTools: {
+                            "sSwfPath": "//cdn.datatables.net/tabletools/2.2.2/swf/copy_csv_xls_pdf.swf"
+                        },
+                        columns: columnArray
+                    });
+
+                    new $.fn.dataTable.FixedColumns(longTable, {
+                        "iLeftColumns": 1
+                    });
+
+                    var html =
+                        '<table id="projectAverages" class="display" cellspacing="0" width="100%">' +
+                        '<thead>' +
+                        '<tr>' +
+                        '<th>Project</th>' +
+                        '<th>Average Defined Time</th>' +
+                        '<th>Average In-Progress Time</th>' +
+                        '<th>Average Completed Time</th>' +
+                        '</tr>' +
+                        '</thead>' +
+                        '</table>';
+
+                    this.down('#display_box').add({
+                        xtype: 'panel',
+                        itemId: 'summaryData',
+                        title: 'Project Overall Cycle Time Averages (by State)',
+                        height: 530,
+                        html: html
+                    });
+
+                    $('#projectAverages').DataTable({
+                        data: projectAverages,
+                        dom: 'T<"clear">lfrtip',
+                        "scrollY": "300px",
+                        "scrollCollapse": true,
+                        //"paging": false,
+                        tableTools: {
+                            "sSwfPath": "//cdn.datatables.net/tabletools/2.2.2/swf/copy_csv_xls_pdf.swf"
+                        },
+                        columns: [{
+                                data: 'Project',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'AvgDefined',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'AvgInProgress',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'AvgCompleted',
+                                className: "dt-body-center"
+                            }
+                        ]
+                    });
+
+                    var html2 =
+                        '<table id="rawDataTableArray" class="display" cellspacing="0" width="100%">' +
+                        '<thead>' +
+                        '<tr>' +
+                        '<th>Artifact ID</th>' +
+                        '<th>Artifact Name</th>' +
+                        '<th>Artifact Project</th>' +
+                        '<th>Artifact Iteration</th>' +
+                        '<th>Time In Defined</th>' +
+                        '<th>Time In-Progress</th>' +
+                        '<th>Time Completed</th>' +
+                        '</tr>' +
+                        '</thead>' +
+                        '</table>';
+
+                    this.down('#display_box').add({
+                        xtype: 'panel',
+                        itemId: 'summaryData2',
+                        title: 'Cycle Time Raw Data',
+                        height: 530,
+                        html: html2
+                    });
+
+                    $('#rawDataTableArray').DataTable({
+                        data: artifactArray,
+                        dom: 'T<"clear">lfrtip',
+                        "scrollY": "300px",
+                        "scrollCollapse": true,
+                        "scrollX": "100%",
+                        //"paging": false,
+                        tableTools: {
+                            "sSwfPath": "//cdn.datatables.net/tabletools/2.2.2/swf/copy_csv_xls_pdf.swf"
+                        },
+                        columns: [{
+                                data: 'FormattedID',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Name',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Project',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Iteration',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'TimeDefined',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'TimeInProgress',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'TimeCompleted',
+                                className: "dt-body-center"
+                            }
+                        ]
+                    });
+
+                    this.pleaseWait.hide();
+                    this.pleaseWait2.hide();
+                },
+
+                roundNumber: function (number, decimal_points) {
+                    if (!decimal_points) return Math.round(number);
+                    if (number == 0) {
+                        var decimals = "";
+                        for (var i = 0; i < decimal_points; i++) decimals += "0";
+                        return "0." + decimals;
+                    }
+
+                    var exponent = Math.pow(10, decimal_points);
+                    var num = Math.round((number * exponent)).toString();
+                    return num.slice(0, -1 * decimal_points) + "." + num.slice(-1 * decimal_points)
+                }
+                //End launch
+            });
+
+
+            Rally.launchApp('CustomApp', {
+                name: 'Schedule State - Time In State - With Chart'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+    </style>
+</head>
+
+<body></body>
+
+</html>

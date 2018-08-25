@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Feature Schedule Report</title>
+    <!--  (c) 2016 CA Technologies.  All Rights Reserved. -->
+    <!--  Build Date: Fri Jan 20 2017 17:07:29 GMT-0700 (MST) -->
+
+    <script type="text/javascript">
+        var APP_BUILD_DATE = "Fri Jan 20 2017 17:07:29 GMT-0700 (MST)";
+        var BUILDER = "kcorkan";
+        var CHECKSUM = 32490262709;
+    </script>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+
+            /**
+             * A link that pops up a version dialog box
+             */
+
+            Ext.define('Rally.technicalservices.InfoLink', {
+                extend: 'Rally.ui.dialog.Dialog',
+                alias: 'widget.tsinfolink',
+
+                /**
+                 * @cfg {String} informationHtml
+                 * Additional text to be displayed on the popup dialog (for exmaple,
+                 * to add a description of the app's use or functionality)
+                 */
+                informationHtml: null,
+
+                /**
+                 * 
+                 * cfg {String} title
+                 * The title for the dialog box
+                 */
+                title: "Build Information",
+
+                defaults: {
+                    padding: 5,
+                    margin: 5
+                },
+
+                closable: true,
+
+                draggable: true,
+
+                autoShow: true,
+
+                width: 350,
+
+                informationalConfig: null,
+
+                items: [{
+                    xtype: 'container',
+                    itemId: 'information'
+                }],
+
+                initComponent: function () {
+                    var id = Ext.id(this);
+                    this.title = "<span class='icon-help'> </span>" + this.title;
+                    this.callParent(arguments);
+                },
+
+                _generateChecksum: function (string) {
+                    var chk = 0x12345678,
+                        i;
+                    string = string.replace(/var CHECKSUM = .*;/, "");
+                    string = string.replace(/var BUILDER = .*;/, "");
+                    string = string.replace(/\s/g, ""); //Remove all whitespace from the string.
+
+                    for (i = 0; i < string.length; i++) {
+                        chk += (string.charCodeAt(i) * i);
+                    }
+
+                    return chk;
+                },
+
+                _checkChecksum: function (container) {
+                    var deferred = Ext.create('Deft.Deferred');
+                    var me = this;
+
+                    Ext.Ajax.request({
+                        url: document.URL,
+                        params: {
+                            id: 1
+                        },
+                        success: function (response) {
+                            text = response.responseText;
+                            if (CHECKSUM) {
+                                var stored_checksum = me._generateChecksum(text);
+                                if (CHECKSUM !== stored_checksum) {
+                                    deferred.resolve(false);
+                                    return;
+                                }
+                            }
+                            deferred.resolve(true);
+                        }
+                    });
+
+                    return deferred.promise;
+                },
+
+                _addToContainer: function (container) {
+                    var config = Ext.apply({
+                        xtype: 'container',
+                        height: 200,
+                        overflowY: true
+                    }, this.informationalConfig);
+
+                    container.add(config);
+                },
+
+                afterRender: function () {
+                    var app = Rally.getApp();
+
+                    if (!Ext.isEmpty(this.informationalConfig)) {
+                        var container = this.down('#information');
+                        this._addToContainer(container);
+
+                    }
+
+                    if (!app.isExternal()) {
+                        this._checkChecksum(app).then({
+                            scope: this,
+                            success: function (result) {
+                                if (!result) {
+                                    this.addDocked({
+                                        xtype: 'container',
+                                        cls: 'build-info',
+                                        dock: 'bottom',
+                                        padding: 2,
+                                        html: '<span class="icon-warning"> </span>Checksums do not match'
+                                    });
+                                }
+                            },
+                            failure: function (msg) {
+                                console.log("oops:", msg);
+                            }
+                        });
+                    } else {
+                        this.addDocked({
+                            xtype: 'container',
+                            cls: 'build-info',
+                            padding: 2,
+                            dock: 'bottom',
+                            html: '... Running externally'
+                        });
+                    }
+                    this.callParent(arguments);
+                },
+
+                beforeRender: function () {
+                    var me = this;
+                    this.callParent(arguments);
+
+                    if (this.informationHtml) {
+                        this.addDocked({
+                            xtype: 'component',
+                            componentCls: 'intro-panel',
+                            padding: 2,
+                            html: this.informationHtml,
+                            doc: 'top'
+                        });
+                    }
+
+                    this.addDocked({
+                        xtype: 'container',
+                        cls: 'build-info',
+                        padding: 2,
+                        dock: 'bottom',
+                        html: "This app was created by the CA AC Technical Services Team."
+                    });
+
+                    if (APP_BUILD_DATE) {
+                        this.addDocked({
+                            xtype: 'container',
+                            cls: 'build-info',
+                            padding: 2,
+                            dock: 'bottom',
+                            html: Ext.String.format("Build date/time: {0} ({1})",
+                                APP_BUILD_DATE,
+                                BUILDER)
+                        });
+                    }
+                }
+            });
+
+            /*
+             */
+            Ext.define('Rally.technicalservices.Logger', {
+                constructor: function (config) {
+                    Ext.apply(this, config);
+                },
+                log: function (args) {
+                    var timestamp = "[ " + Ext.util.Format.date(new Date(), "Y-m-d H:i:s.u") + " ]";
+                    //var output_args = arguments;
+                    //output_args.unshift( [ "[ " + timestamp + " ]" ] );
+                    //output_args = Ext.Array.push(output_args,arguments);
+
+                    var output_args = [];
+                    output_args = Ext.Array.push(output_args, [timestamp]);
+                    output_args = Ext.Array.push(output_args, Ext.Array.slice(arguments, 0));
+
+                    window.console && console.log.apply(console, output_args);
+                }
+
+            });
+
+            Ext.define('CA.agile.technicalservices.FileUtilities', {
+                singleton: true,
+
+                saveCSVToFile: function (csv, file_name, type_object) {
+                    if (type_object === undefined) {
+                        type_object = {
+                            type: 'text/csv;charset=utf-8'
+                        };
+                    }
+                    this.saveAs(csv, file_name, type_object);
+                },
+                saveAs: function (textToWrite, fileName) {
+                    if (Ext.isIE9m) {
+                        Rally.ui.notify.Notifier.showWarning({
+                            message: "Export is not supported for IE9 and below."
+                        });
+                        return;
+                    }
+
+                    var textFileAsBlob = null;
+                    try {
+                        textFileAsBlob = new Blob([textToWrite], {
+                            type: 'text/plain'
+                        });
+                    } catch (e) {
+                        window.BlobBuilder = window.BlobBuilder ||
+                            window.WebKitBlobBuilder ||
+                            window.MozBlobBuilder ||
+                            window.MSBlobBuilder;
+                        if (window.BlobBuilder && e.name == 'TypeError') {
+                            bb = new BlobBuilder();
+                            bb.append([textToWrite]);
+                            textFileAsBlob = bb.getBlob("text/plain");
+                        }
+
+                    }
+
+                    if (!textFileAsBlob) {
+                        Rally.ui.notify.Notifier.showWarning({
+                            message: "Export is not supported for this browser."
+                        });
+                        return;
+                    }
+
+                    var fileNameToSaveAs = fileName;
+
+                    if (Ext.isIE10p) {
+                        window.navigator.msSaveOrOpenBlob(textFileAsBlob, fileNameToSaveAs); // Now the user will have the option of clicking the Save button and the Open button.
+                        return;
+                    }
+
+                    var url = this.createObjectURL(textFileAsBlob);
+
+                    if (url) {
+                        var downloadLink = document.createElement("a");
+                        if ("download" in downloadLink) {
+                            downloadLink.download = fileNameToSaveAs;
+                        } else {
+                            //Open the file in a new tab
+                            downloadLink.target = "_blank";
+                        }
+
+                        downloadLink.innerHTML = "Download File";
+                        downloadLink.href = url;
+                        if (!Ext.isChrome) {
+                            // Firefox requires the link to be added to the DOM
+                            // before it can be clicked.
+                            downloadLink.onclick = this.destroyClickedElement;
+                            downloadLink.style.display = "none";
+                            document.body.appendChild(downloadLink);
+                        }
+                        downloadLink.click();
+                    } else {
+                        Rally.ui.notify.Notifier.showError({
+                            message: "Export is not supported "
+                        });
+                    }
+
+                },
+                createObjectURL: function (file) {
+                    if (window.URL && window.URL.createObjectURL) {
+                        return window.URL.createObjectURL(file);
+                    } else {
+                        return null;
+                    }
+                },
+                destroyClickedElement: function (event) {
+                    document.body.removeChild(event.target);
+                }
+            });
+            Ext.override(Rally.ui.grid.TreeGrid, {
+                _mergeColumnConfigs: function (newColumns, oldColumns) {
+
+                    var mergedColumns = _.map(newColumns, function (newColumn) {
+                        var oldColumn = _.find(oldColumns, {
+                            dataIndex: this._getColumnName(newColumn)
+                        });
+                        if (oldColumn) {
+                            return this._getColumnConfigFromColumn(oldColumn);
+                        }
+
+                        return newColumn;
+                    }, this);
+                    mergedColumns = mergedColumns.concat(this.config.derivedColumns);
+                    return mergedColumns;
+                },
+
+                _isStatefulColumn: function (columnName) {
+                    var unstatefulColumns = _.pluck(this.config.derivedColumns, 'dataIndex');
+                    if (Ext.Array.contains(unstatefulColumns, columnName)) {
+                        return false;
+                    }
+                    if (!this.allColumnsStateful) {
+                        columnName = columnName.toLowerCase();
+
+                        if (this.store.enableHierarchy && columnName === this.treeColumnDataIndex.toLowerCase()) {
+                            return false;
+                        }
+
+                        if (this.enableRanking && columnName === this.rankColumnDataIndex.toLowerCase()) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                },
+                _getColumnConfigsBasedOnCurrentOrder: function (columnConfigs) {
+                    return _(this.headerCt.items.getRange()).map(function (column) {
+                        //override:  Added additional search for column.text
+                        return _.contains(columnConfigs, column.dataIndex) ? column.dataIndex :
+                            _.find(columnConfigs, {
+                                dataIndex: column.dataIndex,
+                                text: column.text
+                            });
+                    }).compact().value();
+                },
+                _restoreColumnOrder: function (columnConfigs) {
+
+                    var currentColumns = this._getColumnConfigsBasedOnCurrentOrder(columnConfigs);
+                    var addedColumns = _.filter(columnConfigs, function (config) {
+                        return !_.find(currentColumns, {
+                            dataIndex: config.dataIndex
+                        }) || Ext.isString(config);
+                    });
+                    return currentColumns.concat(addedColumns);
+                },
+                _applyStatefulColumns: function (columns) {
+                    if (this.alwaysShowDefaultColumns) {
+                        _.each(this.columnCfgs, function (columnCfg) {
+                            if (!_.any(columns, {
+                                    dataIndex: this._getColumnName(columnCfg)
+                                })) {
+                                columns.push(columnCfg);
+                            }
+                        }, this);
+                    }
+                    if (this.config && this.config.derivedColumns) {
+                        this.columnCfgs = columns.concat(this.config.derivedColumns);
+                    } else {
+                        this.columnCfgs = columns;
+                    }
+
+                },
+                _getPersistableColumnConfig: function (column) {
+                    var columnConfig = this._getColumnConfigFromColumn(column),
+                        field = this._getModelField(columnConfig.dataIndex);
+                    if (field && field.getUUID && field.getUUID()) {
+                        columnConfig.dataIndex = field.getUUID();
+                    }
+                    return columnConfig;
+                },
+                _getPersistableSorter: function (sorterProperty) {
+                    var field = this._getModelField(sorterProperty);
+                    return (field && field.getUUID && field.getUUID()) || sorterProperty;
+                },
+
+                applyState: function (state) {
+                    this.appliedState = state;
+                    this.fireEvent('beforestaterestore', this, state);
+
+                    if (state.columns) {
+                        state.columns = _.reject(state.columns, function (col) {
+                            return !this._getColumnName(col);
+                        }, this);
+                        // make sure flex is set correctly for column configs saved in a preference
+                        _.each(state.columns, this._setColumnFlex, this);
+                        state.columns = _.map(state.columns, this._transformUuidsToNames, this);
+                        this._applyStatefulColumns(state.columns);
+                    }
+
+                    if (state.pagingToolbar) {
+                        var store = this.getStore(),
+                            pageSize = state.pagingToolbar.pageSize,
+                            currentPage = state.pagingToolbar.currentPage;
+                        if (this.pagingToolbarCfg) {
+                            var maxPageSize = _.last(this.pagingToolbarCfg.pageSizes);
+                            if (maxPageSize && maxPageSize < pageSize) {
+                                pageSize = maxPageSize;
+                                currentPage = 1;
+                            }
+                        }
+                        store.pageSize = pageSize;
+                        store.currentPage = currentPage;
+                    }
+
+                    if (state.sorters) {
+                        _.each(state.sorters, this._transformUuidsToSorterProperty, this);
+                        var sorters = _.transform(state.sorters, function (collection, sorterState) {
+                            if (Rally.data.Ranker.isRankField(sorterState.property)) {
+                                sorterState.property = Rally.data.Ranker.getRankField(this.store
+                                    .model);
+                            }
+
+                            collection.add(Ext.create('Ext.util.Sorter', {
+                                property: sorterState.property,
+                                direction: sorterState.direction
+                            }));
+                        }, Ext.create('Ext.util.MixedCollection'), this);
+                        this.getStore().sorters = sorters;
+                    }
+
+                    if (state.expandedRowPersistence) {
+                        this.expandedRowPersistenceState = state.expandedRowPersistence;
+                    }
+
+                    this.fireEvent('staterestore', this, state);
+                }
+            });
+
+            Ext.override(Rally.ui.tree.PagingToolbar, {
+
+                _onSubsequentLoads: function (store, node, records, successful, options) {
+                    var hasTopLevelRecord = _.any(records, function (record) {
+                        var isChildRecord = record.get('depth') > 1;
+                        return !isChildRecord;
+                    });
+
+                    if (hasTopLevelRecord) {
+                        this._reRender();
+                    }
+
+                    this._recordMetricsEnd();
+                },
+                _reRender: function () {
+                    if (this.rendered !== true) {
+                        return;
+                    }
+
+                    this._cleanupAdditionalComponents();
+
+                    this.renderData = this._getPageData();
+                    console.log('thisrenderData', this.renderData);
+                    this.renderTpl.overwrite(this.getTargetEl(), this.renderData);
+
+                    this.applyRenderSelectors();
+                    this._addPageSizeCombobox();
+                    this._addButtons();
+
+                    this.fireEvent('change', this, this.renderData);
+                },
+                _getPageData: function () {
+                    var store = this.getStore();
+
+                    if (!store) {
+                        return {
+                            total: 0,
+                            currentPage: 0,
+                            pageCount: 0,
+                            pageSize: 0,
+                            start: 0,
+                            end: 0,
+                            pageSizes: 0
+                        };
+                    }
+
+                    //var totalCount = store.getTotalCount() || 0,
+                    //    start = ((store.currentPage - 1) * store.pageSize) + 1;
+
+                    //Get the visible nodes instead of the total count since we are doing some client side filtering
+                    var totalCount = store.getRootNode().childNodes && store.getRootNode().childNodes
+                        .length || 0,
+                        start = ((store.currentPage - 1) * store.pageSize) + 1;
+
+                    if (totalCount === 0) {
+                        start = 0;
+                    }
+
+                    return {
+                        total: totalCount,
+                        currentPage: store.currentPage,
+                        pageCount: Math.ceil(totalCount / store.pageSize),
+                        pageSize: store.pageSize,
+                        start: start,
+                        end: Math.min(store.currentPage * store.pageSize, totalCount),
+                        pageSizes: this.getPageSizes()
+                    };
+                }
+            });
+            Ext.define("feature-schedule", {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+                logger: new Rally.technicalservices.Logger(),
+                defaults: {
+                    margin: 10
+                },
+                items: [{
+                        xtype: 'container',
+                        itemId: 'message_box',
+                        tpl: 'Hello, <tpl>{_refObjectName}</tpl>'
+                    },
+                    {
+                        xtype: 'container',
+                        itemId: 'display_box'
+                    }
+                ],
+
+                integrationHeaders: {
+                    name: "feature-schedule"
+                },
+
+                flagTooltips: {
+                    missing: "At least one story is missing an iteration date or the planned end date is missing.",
+                    late: "Latest iteration date is after the planned end date for the feature."
+                },
+
+                launch: function () {
+                    if (!this.isTimeboxScoped()) {
+                        this.showNoScopeMessage();
+                        return;
+                    }
+                    this.fetchPortfolioItemTypes().then({
+                        success: this.initializeApp,
+                        failure: this.showErrorNotification,
+                        scope: this
+                    });
+
+                },
+                initializeApp: function (portfolioTypes) {
+                    this.portfolioItemTypeDefs = Ext.Array.map(portfolioTypes, function (p) {
+                        return p.getData();
+                    });
+                    this.onTimeboxScopeChange();
+                },
+                isTimeboxScoped: function () {
+                    return this.getContext().getTimeboxScope() && this.getContext().getTimeboxScope()
+                        .getType() === 'release' || false;
+                },
+                onTimeboxScopeChange: function (timeboxScope) {
+                    if (!timeboxScope) {
+                        timeboxScope = this.getContext().getTimeboxScope();
+                    }
+                    this.logger.log('timeboxScope', timeboxScope && timeboxScope.getRecord() &&
+                        timeboxScope.getRecord().getData());
+                    if (timeboxScope && timeboxScope.getType() === 'release') {
+                        this.getContext().setTimeboxScope(timeboxScope);
+                        this.updateView(timeboxScope);
+                    }
+                },
+                showAppNotification: function (msg) {
+                    this.removeAll();
+                    this.add({
+                        xtype: 'container',
+                        html: Ext.String.format(
+                            '<div class="no-data-container"><div class="secondary-message">{0}</div></div>',
+                            msg)
+                    });
+                },
+                showNoScopeMessage: function () {
+                    this.showAppNotification(
+                        'This app is designed for a Release scoped dashboard.  Please update the current dashboard to have an release scope.'
+                    );
+                },
+                showErrorNotification: function (msg) {
+                    Rally.ui.notify.Notifier.showError({
+                        message: msg
+                    });
+                },
+                exportCurrentPage: function () {
+                    var grid = this.down('rallygridboard') && this.down('rallygridboard').getGridOrBoard();
+                    if (!grid) {
+                        this.showErrorNotification("No data to export");
+                        return;
+                    }
+
+                    var store = grid.getStore(),
+                        columns = [{
+                            dataIndex: 'FormattedID',
+                            text: 'FormattedID'
+                        }];
+
+                    columns = columns.concat(grid.getColumnCfgs());
+
+                    var root = store.getRootNode(),
+                        csv = [],
+                        headers = [],
+                        flagTooltips = this.flagTooltips;
+
+                    Ext.Array.each(columns, function (c) {
+
+                        if (c.dataIndex) {
+                            headers.push(c.text || c.dataIndex);
+                        }
+                    });
+                    csv.push(headers.join(','));
+
+                    Ext.Array.each(root.childNodes, function (r) {
+                        var row = [];
+                        Ext.Array.each(columns, function (c) {
+                            if (c.dataIndex) {
+
+                                var val = r.get(c.dataIndex);
+                                if (Ext.isObject(val)) {
+                                    if (val._tagsNameArray) {
+                                        var newVal = [];
+                                        Ext.Array.each(val._tagsNameArray, function (
+                                            t) {
+                                            newVal.push(t.Name);
+                                        });
+                                        val = newVal.join(',');
+                                    } else {
+                                        val = val._refObjectName;
+                                    }
+                                }
+                                if (c.dataIndex === '__isLate') {
+                                    if (val === 1) {
+                                        val = flagTooltips.missing;
+                                    }
+                                    if (val === 2) {
+                                        val = flagTooltips.late;
+                                    }
+                                }
+                                row.push(val || "");
+                            }
+                        });
+                        row = _.map(row, function (v) {
+                            return Ext.String.format("\"{0}\"", v && v.toString().replace(
+                                /"/g, "\"\"") || "");
+                        });
+                        csv.push(row.join(","));
+                    });
+
+                    csv = csv.join("\r\n");
+                    var fileName = Ext.String.format('feature-schedule-{0}.csv', Rally.util.DateTime
+                        .format(new Date(), 'Y-m-d-h-i-s'));
+                    CA.agile.technicalservices.FileUtilities.saveCSVToFile(csv, fileName);
+
+                },
+                updateView: function (timeboxScope) {
+                    this.logger.log('updateView', timeboxScope);
+
+                    this.removeAll();
+
+                    this.setLoading(true);
+                    this.fetchUserStories(timeboxScope).then({
+                        success: this.buildFeatureStore,
+                        failure: this.showErrorNotification,
+                        scope: this
+                    }).always(function () {
+                        this.setLoading(false);
+                    }, this);
+                },
+                getFeatureName: function () {
+                    return this.getFeatureTypePath().replace('PortfolioItem/', '');
+                },
+                getFeatureTypePath: function () {
+                    return this.portfolioItemTypeDefs[0].TypePath;
+                    //return 'PortfolioItem/Feature';
+                },
+                fetchPortfolioItemTypes: function () {
+                    return this.fetchWsapiRecords({
+                        model: 'TypeDefinition',
+                        fetch: ['TypePath', 'Ordinal', 'Name'],
+                        context: {
+                            workspace: this.getContext().getWorkspace()._ref
+                        },
+                        filters: [{
+                                property: 'Parent.Name',
+                                operator: '=',
+                                value: 'Portfolio Item'
+                            },
+                            {
+                                property: 'Creatable',
+                                operator: '=',
+                                value: 'true'
+                            }
+                        ],
+                        sorters: [{
+                            property: 'Ordinal',
+                            direction: 'ASC'
+                        }]
+                    });
+                },
+                fetchUserStories: function (timeboxScope) {
+                    var timeboxRecord = timeboxScope && timeboxScope.getRecord(),
+                        timeboxData = timeboxRecord && timeboxRecord.getData() || null,
+                        storyFilters = timeboxScope && timeboxScope.getQueryFilter();
+
+                    if (!timeboxData) {
+                        this.showAppNotification("Please select a Release.");
+                        return;
+                    }
+                    var featureFilters = Ext.create('Rally.data.wsapi.Filter', {
+                        property: this.getFeatureName() + ".Release.Name",
+                        value: timeboxData.Name
+                    });
+                    featureFilters = featureFilters.and({
+                        property: this.getFeatureName() + ".Release.ReleaseStartDate",
+                        value: timeboxData.ReleaseStartDate
+                    });
+                    featureFilters = featureFilters.and({
+                        property: this.getFeatureName() + ".Release.ReleaseDate",
+                        value: timeboxData.ReleaseDate
+                    });
+
+                    var filters = featureFilters.or(storyFilters);
+
+                    this.logger.log('fetchUserStories', filters && filters.toString());
+
+                    return this.fetchWsapiRecords({
+                        model: 'HierarchicalRequirement',
+                        fetch: ['ObjectID', 'FormattedID', this.getFeatureName(),
+                            'Iteration', 'EndDate', 'DirectChildrenCount'
+                        ],
+                        filters: filters,
+                        limit: 'Infinity'
+                    });
+                },
+                getFeatureFilters: function (releaseStories) {
+                    var featureOids = [];
+
+                    Ext.Array.each(releaseStories, function (s) {
+                        var oid = s.get('Feature') && s.get('Feature').ObjectID;
+
+                        if (oid && !Ext.Array.contains(featureOids, oid)) {
+                            featureOids.push(oid);
+                        }
+                    });
+
+                    var featureFilters = Ext.Array.map(featureOids, function (f) {
+                        return {
+                            property: 'ObjectID',
+                            value: f
+                        }
+                    });
+                    if (featureFilters && featureFilters.length > 0) {
+                        featureFilters = Rally.data.wsapi.Filter.or(featureFilters);
+                        featureFilters = featureFilters.or(this.getContext().getTimeboxScope().getQueryFilter());
+                    } else {
+                        featureFilters = this.getContext().getTimeboxScope().getQueryFilter();
+                    }
+                    this.logger.log('getFeatureFilters', featureFilters.toString());
+
+                    return featureFilters;
+                },
+                getModelNames: function () {
+                    return [this.getFeatureTypePath()];
+                },
+                updateFeatures: function (store, node, records, operation) {
+                    this.logger.log('updateFeatures', records, operation, this.userStories);
+
+                    var featureHash = {},
+                        featureName = this.getFeatureName(),
+                        missingIteration = [];
+
+                    Ext.Array.each(this.userStories, function (s) {
+                        if (s.get(featureName) && s.get('Iteration')) {
+                            var endDate = Rally.util.DateTime.fromIsoString(s.get(
+                                    'Iteration').EndDate),
+                                featureOid = s.get(featureName).ObjectID;
+
+                            if (!featureHash[featureOid]) {
+                                featureHash[featureOid] = {
+                                    latestEndDate: endDate
+                                }
+                            }
+
+                            if (featureHash[featureOid].latestEndDate < endDate) {
+                                featureHash[featureOid].latestEndDate = endDate;
+                            }
+                        }
+
+                        if (s.get(featureName) && !s.get('Iteration') && s.get(
+                                'DirectChildrenCount') === 0) {
+                            missingIteration.push(s.get(featureName).ObjectID);
+                        }
+                    });
+                    this.logger.log('featureHash', featureHash);
+                    var milestoneOids = [];
+
+                    this.suspendEvents();
+                    Ext.Array.each(records, function (r) {
+                        var milestones = r.get('Milestones');
+                        if (milestones && milestones.Count > 0) {
+                            Ext.Array.each(milestones._tagsNameArray, function (t) {
+                                if (t._ref) {
+                                    var moid = Number(t._ref.replace('/milestone/',
+                                        ''));
+                                    if (moid && !Ext.Array.contains(milestoneOids,
+                                            moid)) {
+                                        milestoneOids.push(moid);
+                                    }
+                                }
+                            });
+                        }
+
+                        var oid = r.get('ObjectID');
+                        if (r.get('LeafStoryCount') > 0) {
+                            if (featureHash[oid]) {
+                                if (featureHash[oid].latestEndDate && featureHash[oid].latestEndDate >
+                                    r.get('PlannedEndDate')) {
+                                    r.set('__isLate', 2);
+                                } else {
+                                    if (!featureHash[oid].latestEndDate || !r.get(
+                                            'PlannedEndDate') || Ext.Array.contains(
+                                            missingIteration, oid)) {
+                                        r.set('__isLate', 1);
+                                    }
+                                }
+                                r.set('__latestIterationEndDate', featureHash[oid].latestEndDate);
+                            } else {
+                                r.set('__isLate', 1);
+                            }
+                        }
+
+                    });
+                    this.resumeEvents();
+
+                    if (milestoneOids.length > 0) {
+                        var filters = Ext.Array.map(milestoneOids, function (m) {
+                            return {
+                                property: 'ObjectID',
+                                value: m
+                            };
+                        });
+                        filters = Rally.data.wsapi.Filter.or(filters);
+
+                        this.setLoading("Loading Milestone data...");
+
+                        this.fetchWsapiRecords({
+                            model: 'Milestone',
+                            fetch: ['ObjectID', 'FormattedID', 'TargetDate'],
+                            filters: filters,
+                            limit: milestoneOids.length,
+                            context: {
+                                project: null
+                            },
+                            usePostGet: true
+                        }).then({
+                            success: function (milestones) {
+                                var milestoneHash = {};
+                                Ext.Array.each(milestones, function (m) {
+                                    milestoneHash[m.get("_ref")] = m.get(
+                                            'TargetDate') ? Rally.util.DateTime
+                                        .fromIsoString(m.get('TargetDate')) :
+                                        null;
+                                });
+
+                                this.suspendEvents();
+                                Ext.Array.each(records, function (f) {
+                                    var featureMilestones = f.get('Milestones');
+                                    if (featureMilestones && featureMilestones.Count >
+                                        0) {
+                                        featureMilestones = featureMilestones._tagsNameArray;
+                                        var earliestMilestoneDate = null;
+                                        Ext.Array.each(featureMilestones,
+                                            function (fm) {
+                                                var mdate = milestoneHash[
+                                                    fm._ref];
+                                                if (mdate && (!
+                                                        earliestMilestoneDate ||
+                                                        earliestMilestoneDate >
+                                                        mdate)) {
+                                                    earliestMilestoneDate =
+                                                        mdate;
+                                                }
+                                            });
+                                        f.set('__earliestMilestoneDate',
+                                            earliestMilestoneDate);
+                                    }
+                                });
+                                this.resumeEvents();
+                            },
+                            failure: this.showErrorNotification,
+                            scope: this
+                        }).always(function () {
+                            this.setLoading(false);
+                        }, this);
+                    }
+
+                    if (this.sorters) {
+                        var grid = this.down('rallygridboard').getGridOrBoard(),
+                            sorter = this.sorters;
+
+                        if (sorter.property === '__isLate' ||
+                            sorter.property === '__earliestMilestoneDate' ||
+                            sorter.property === '__latestMilestoneDate') {
+                            Ext.Array.each(grid.columns, function (col) {
+                                if (col.dataIndex === sorter.property) {
+                                    col.doSort(sorter.direction);
+                                    return false;
+                                }
+                            });
+                        }
+                    }
+
+                },
+                buildFeatureStore: function (stories) {
+                    this.logger.log('buildFeatureStore', stories);
+                    //if (!stories || stories.length === 0){
+                    //    this.showAppNotification("No stories were found for the selected Release.");
+                    //    return;
+                    //}
+                    this.userStories = stories;
+                    var filters = this.getFeatureFilters(stories);
+
+                    this.setLoading(true);
+                    Ext.create('Rally.data.wsapi.TreeStoreBuilder').build({
+                        models: this.getModelNames(),
+                        // autoLoad: true,
+                        enableHierarchy: true,
+                        fetch: ['PlannedEndDate', 'Milestones', 'ObjectID', 'TargetDate',
+                            'LeafStoryCount'
+                        ],
+                        filters: filters,
+                        enableRootLevelPostGet: true,
+                        autoSync: false,
+                        pageSize: 1000
+                    }).then({
+                        success: function (store) {
+                            store.model.addField({
+                                name: '__latestIterationEndDate',
+                                type: 'auto',
+                                defaultValue: null
+                            });
+                            store.model.addField({
+                                name: '__earliestMilestoneDate',
+                                type: 'auto',
+                                defaultValue: null
+                            });
+                            store.model.addField({
+                                name: '__isLate',
+                                type: 'auto',
+                                defaultValue: null
+                            });
+
+                            store.on('load', this.updateFeatures, this);
+                            this.add({
+                                xtype: 'rallygridboard',
+                                context: this.getContext(),
+                                modelNames: this.getModelNames(),
+                                toggleState: 'grid',
+                                //stateful: true,
+                                //stateId: this.getContext().getScopedStateId('fsgridboard'),
+                                plugins: this.getGridPlugins(),
+                                listeners: {
+                                    afterrender: function (ct) {
+
+                                        ct.getHeader().getLeft().add({
+                                            xtype: 'rallybutton',
+                                            iconCls: 'icon-flag',
+                                            cls: 'rly-small secondary',
+                                            margin: '3 3 0 25',
+                                            toolTipText: "Show only flagged items",
+                                            enableToggle: true,
+                                            toggleHandler: this.filterFlaggedItems,
+                                            scope: this
+                                        });
+
+                                    },
+                                    scope: this
+                                },
+                                gridConfig: {
+                                    //stateful: true,
+                                    //stateId: this.getContext().getScopedStateId('fsgrid'),
+                                    pagingToolbarCfg: {
+                                        pageSizes: [500, 1000, 2000]
+                                    },
+                                    store: store,
+                                    storeConfig: {
+                                        filters: filters,
+                                        pageSize: 1000,
+                                        enableRootLevelPostGet: true
+                                    },
+                                    columnCfgs: this.getColumnConfigs(),
+                                    derivedColumns: this.getDerivedColumns(),
+                                    listeners: {
+                                        staterestore: function (x, state) {
+                                            if (state.sorters && state.sorters
+                                                .length > 0) {
+                                                this.sorters = state.sorters[
+                                                    0];
+                                            }
+                                        },
+                                        sortchange: function (ct, column,
+                                            direction) {
+                                            this.sorters = {
+                                                property: column.dataIndex,
+                                                direction: direction
+                                            }
+                                        },
+                                        scope: this
+                                    }
+                                },
+                                height: this.getHeight()
+                            });
+                        },
+                        scope: this
+                    }).always(function () {
+                        this.setLoading(false);
+                    }, this);
+                },
+                getGridPlugins: function () {
+                    return [{
+                        ptype: 'rallygridboardfieldpicker',
+                        headerPosition: 'left',
+                        modelNames: this.getModelNames(),
+                        //stateful: true,
+                        margin: '3 3 3 25',
+                        stateId: this.getContext().getScopedStateId('fsfp2')
+                    }, {
+                        ptype: 'rallygridboardinlinefiltercontrol',
+                        inlineFilterButtonConfig: {
+                            stateful: true,
+                            stateId: this.getContext().getScopedStateId('fsfilter'),
+                            modelNames: this.getModelNames(),
+                            margin: 3,
+                            inlineFilterPanelConfig: {
+                                quickFilterPanelConfig: {
+                                    defaultFields: [
+                                        'ArtifactSearch',
+                                        'Owner',
+                                        'ModelType'
+                                    ]
+                                }
+                            }
+                        }
+                    }, {
+                        ptype: 'rallygridboardactionsmenu',
+                        menuItems: [{
+                            text: 'Export Current Grid Page...',
+                            handler: this.exportCurrentPage,
+                            handler: this.exportCurrentPage,
+                            scope: this
+                        }],
+                        buttonConfig: {
+                            margin: 3,
+                            iconCls: 'icon-export'
+                        }
+                    }];
+                },
+                getColumnConfigs: function () {
+                    return [{
+                        dataIndex: 'Name',
+                        text: 'Name'
+                    }, {
+                        dataIndex: 'PlannedEndDate',
+                        text: 'Planned End Date'
+                    }, {
+                        dataIndex: 'Milestones',
+                        text: 'Milestones'
+                    }].concat(this.getDerivedColumns());
+                },
+                getDerivedColumns: function () {
+
+                    return [{
+                        dataIndex: '__isLate',
+                        xtype: 'templatecolumn',
+                        text: 'Late Flag',
+                        tpl: '<div>' +
+                            '<tpl if="__isLate==1">' +
+                            '<div class="flag-missing" ><div class="icon-flag"></div><span class="tooltiptext">' +
+                            this.flagTooltips.missing + '</span></div>' +
+                            '</tpl>' +
+                            '<tpl if="__isLate==2">' +
+                            '<div class="flag-late"><div class="icon-flag"></div><span class="tooltiptext">' +
+                            this.flagTooltips.late + '</span></div>' +
+                            '</tpl>' +
+                            '</div>',
+                        doSort: function (direction) {
+                            var ds = this.up('rallytreegrid').getStore();
+                            ds.sort({
+                                property: '__isLate',
+                                direction: direction,
+                                sorterFn: function (v1, v2) {
+                                    var a = v1.get('__isLate') || 0,
+                                        b = v2.get('__isLate') || 0,
+                                        dateA = v1.get(
+                                            '__latestIterationEndDate'),
+                                        dateB = v2.get(
+                                            '__latestIterationEndDate');
+
+                                    return a > b ? 1 : (a < b ? -1 : (dateA >
+                                        dateB ? 1 : (dateA < dateB ?
+                                            -1 : 0)));
+                                }
+                            });
+                        }
+                    }, {
+                        dataIndex: '__latestIterationEndDate',
+                        xtype: 'templatecolumn',
+                        text: 'Latest Iteration End Date',
+                        tpl: '<div style="text-align:right;">{__latestIterationEndDate}</div>',
+                        doSort: function (direction) {
+                            var ds = this.up('rallytreegrid').getStore();
+                            ds.sort({
+                                property: '__latestIterationEndDate',
+                                direction: direction,
+                                sorterFn: function (v1, v2) {
+                                    var dateA = v1.get(
+                                            '__latestIterationEndDate'),
+                                        dateB = v2.get(
+                                            '__latestIterationEndDate');
+
+                                    return dateA > dateB ? 1 : (dateA <
+                                        dateB ? -1 : 0);
+                                }
+                            });
+                        }
+                    }, {
+
+                        dataIndex: '__earliestMilestoneDate',
+                        xtype: 'templatecolumn',
+                        text: 'Earliest Milestone Date',
+                        tpl: '<div style="text-align:right;">{__earliestMilestoneDate}</div>',
+                        doSort: function (direction) {
+                            var ds = this.up('rallytreegrid').getStore();
+                            ds.sort({
+                                property: '__earliestMilestoneDate',
+                                direction: direction,
+                                sorterFn: function (v1, v2) {
+                                    var dateA = v1.get(
+                                            '__earliestMilestoneDate'),
+                                        dateB = v2.get(
+                                            '__earliestMilestoneDate');
+
+                                    return dateA > dateB ? 1 : (dateA <
+                                        dateB ? -1 : 0);
+                                }
+                            });
+                        }
+                    }]
+                },
+                fetchWsapiRecords: function (config) {
+                    var deferred = Ext.create('Deft.Deferred');
+                    Ext.create('Rally.data.wsapi.Store', config).load({
+                        callback: function (records, operation) {
+                            if (operation.wasSuccessful()) {
+                                deferred.resolve(records);
+                            } else {
+                                deferred.reject(Ext.String.format(
+                                    'Failed to fetch {0} records: {1}', config.model,
+                                    operation && operation.error && operation.error
+                                    .errors.join(',')));
+                            }
+                        }
+                    });
+                    return deferred;
+                },
+                filterFlaggedItems: function (toggleBtn) {
+                    this.logger.log('filterFlaggedItems', toggleBtn);
+
+
+                    var showAll = true;
+                    if (!toggleBtn.hasCls('primary')) {
+                        toggleBtn.addCls('primary');
+                        toggleBtn.removeCls('secondary');
+                        toggleBtn.setTooltip("Show All Items");
+                        showAll = false;
+                    } else {
+                        toggleBtn.addCls('secondary');
+                        toggleBtn.removeCls('primary');
+                        toggleBtn.setTooltip("Show Late Flagged Items Only");
+                    }
+
+                    var grid = this.down('rallygridboard') && this.down('rallygridboard').getGridOrBoard();
+                    if (!grid) {
+                        return;
+                    }
+
+                    var node = grid.getStore().getRootNode(),
+                        toRemove = [];
+                    if (!showAll) {
+                        node.eachChild(function (n) {
+                            if (n && n.get('__isLate') !== 2) {
+                                toRemove.push(n);
+                            }
+                        });
+                        Ext.Array.each(toRemove, function (n) {
+                            n.remove(false);
+                        });
+                        if (grid.down('rallytreepagingtoolbar')) {
+                            grid.down('rallytreepagingtoolbar')._reRender();
+                        }
+                    } else {
+                        this.updateView(this.getContext().getTimeboxScope());
+                    }
+
+                },
+                getOptions: function () {
+                    return [{
+                        text: 'About...',
+                        handler: this._launchInfo,
+                        scope: this
+                    }];
+                },
+                _launchInfo: function () {
+                    if (this.about_dialog) {
+                        this.about_dialog.destroy();
+                    }
+                    this.about_dialog = Ext.create('Rally.technicalservices.InfoLink', {});
+                },
+
+                isExternal: function () {
+                    return typeof (this.getAppId()) == 'undefined';
+                },
+
+                //onSettingsUpdate:  Override
+                onSettingsUpdate: function (settings) {
+                    this.logger.log('onSettingsUpdate', settings);
+                    // Ext.apply(this, settings);
+                    this.launch();
+                }
+            });
+
+
+            Rally.launchApp('feature-schedule', {
+                name: 'Feature Schedule Report'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+        .app {}
+
+        .tsinfolink {
+            position: absolute;
+            right: 0px;
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            text-align: center;
+            color: white;
+            background: #C0C0C0;
+            border-style: solid;
+            border-width: 1px;
+            margin-top: 25px;
+            margin-right: 5px;
+            cursor: pointer;
+        }
+
+        .flag-late {
+            color: #EE1C25;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .flag-missing {
+            text-align: center;
+            font-size: 16px;
+            color: #FAD200;
+        }
+
+        .flag-missing .tooltiptext {
+            visibility: hidden;
+            background-color: black;
+            color: #fff;
+            text-align: left;
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 11px;
+            font-family: NotoSans, Helvetica, Arial;
+            /* Position the tooltip */
+            position: absolute;
+            z-index: 1;
+        }
+
+        .flag-late .tooltiptext {
+            visibility: hidden;
+            background-color: black;
+            width: 200px;
+            color: #fff;
+            text-align: left;
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 11px;
+            font-family: NotoSans, Helvetica, Arial;
+            /* Position the tooltip */
+            position: absolute;
+            z-index: 1;
+        }
+
+        .flag-late:hover .tooltiptext {
+            visibility: visible;
+        }
+
+        .flag-missing:hover .tooltiptext {
+            visibility: visible;
+        }
+    </style>
+
+</head>
+
+<body></body>
+
+</html>
