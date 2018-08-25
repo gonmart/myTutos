@@ -1,0 +1,2957 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Rally Iteration Health</title>
+    <!--  (c) 2015,2016 CA Technologies.  All Rights Reserved. -->
+    <!--  Build Date: Tue Aug 09 2016 17:35:42 GMT-0700 (PDT) -->
+
+    <script type="text/javascript">
+        var APP_BUILD_DATE = "Tue Aug 09 2016 17:35:42 GMT-0700 (PDT)";
+        var CHECKSUM = 204821544481;
+    </script>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+
+            /**
+             * A link that pops up a version dialog box
+             */
+
+            Ext.define('Rally.technicalservices.InfoLink', {
+                extend: 'Rally.ui.dialog.Dialog',
+                alias: 'widget.tsinfolink',
+
+                /**
+                 * @cfg {String} informationHtml
+                 * Additional text to be displayed on the popup dialog (for exmaple,
+                 * to add a description of the app's use or functionality)
+                 */
+                informationHtml: null,
+
+                /**
+                 * 
+                 * cfg {String} title
+                 * The title for the dialog box
+                 */
+                title: "Build Information",
+
+                defaults: {
+                    padding: 5,
+                    margin: 5
+                },
+
+                closable: true,
+
+                draggable: true,
+
+                autoShow: true,
+
+                width: 350,
+
+                initComponent: function () {
+                    var id = Ext.id(this);
+                    this.title = "<span class='icon-help'> </span>" + this.title;
+                    this.callParent(arguments);
+                },
+
+                _generateChecksum: function (string) {
+                    var chk = 0x12345678,
+                        i;
+                    string = string.replace(/var CHECKSUM = .*;/, "");
+                    string = string.replace(/\s/g, ""); //Remove all whitespace from the string.
+
+                    for (i = 0; i < string.length; i++) {
+                        chk += (string.charCodeAt(i) * i);
+                    }
+
+                    return chk;
+                },
+
+                _checkChecksum: function (container) {
+                    var deferred = Ext.create('Deft.Deferred');
+                    console.log("_checkChecksum", container);
+                    var me = this;
+
+                    Ext.Ajax.request({
+                        url: document.URL,
+                        params: {
+                            id: 1
+                        },
+                        success: function (response) {
+                            text = response.responseText;
+                            if (CHECKSUM) {
+                                if (CHECKSUM !== me._generateChecksum(text)) {
+                                    console.log("Checksums don't match!");
+                                    deferred.resolve(false);
+                                    return;
+                                }
+                            }
+                            deferred.resolve(true);
+                        }
+                    });
+
+                    return deferred.promise;
+                },
+
+                afterRender: function () {
+                    var app = Rally.getApp();
+
+                    if (!app.isExternal()) {
+
+                        this._checkChecksum(app).then({
+                            scope: this,
+                            success: function (result) {
+                                if (!result) {
+                                    this.addDocked({
+                                        xtype: 'container',
+                                        cls: 'build-info',
+                                        padding: 2,
+                                        html: '<span class="icon-warning"> </span>Checksums do not match'
+                                    });
+                                }
+                            },
+                            failure: function (msg) {
+                                console.log("oops:", msg);
+                            }
+                        });
+                    } else {
+                        this.addDocked({
+                            xtype: 'container',
+                            cls: 'build-info',
+                            padding: 2,
+                            html: '... Running externally'
+                        });
+                    }
+                    this.callParent(arguments);
+                },
+
+                beforeRender: function () {
+                    var me = this;
+                    this.callParent(arguments);
+
+                    if (this.informationHtml) {
+                        this.addDocked({
+                            xtype: 'component',
+                            componentCls: 'intro-panel',
+                            padding: 2,
+                            html: this.informationHtml
+                        });
+                    }
+
+                    this.addDocked({
+                        xtype: 'container',
+                        cls: 'build-info',
+                        padding: 2,
+                        html: "This app was created by the Rally Technical Services Team."
+                    });
+
+                    if (APP_BUILD_DATE) {
+                        this.addDocked({
+                            xtype: 'container',
+                            cls: 'build-info',
+                            padding: 2,
+                            html: 'Build date/time: ' + APP_BUILD_DATE
+                        });
+                    }
+                }
+            });
+
+            /*
+             */
+            Ext.define('Rally.technicalservices.Logger', {
+                constructor: function (config) {
+                    Ext.apply(this, config);
+                },
+                log: function (args) {
+                    var timestamp = "[ " + Ext.util.Format.date(new Date(), "Y-m-d H:i:s.u") + " ]";
+                    //var output_args = arguments;
+                    //output_args.unshift( [ "[ " + timestamp + " ]" ] );
+                    //output_args = Ext.Array.push(output_args,arguments);
+
+                    var output_args = [];
+                    output_args = Ext.Array.push(output_args, [timestamp]);
+                    output_args = Ext.Array.push(output_args, Ext.Array.slice(arguments, 0));
+
+                    window.console && console.log.apply(console, output_args);
+                }
+
+            });
+
+            Ext.define('Rally.technicalservices.healthConfiguration', {
+                mixins: {
+                    observable: 'Ext.util.Observable'
+                },
+                logger: new Rally.technicalservices.Logger(),
+                /**
+                 * Configurations set by the app
+                 */
+                usePoints: true,
+                appId: undefined,
+                showDateForHalfAcceptanceRatio: false,
+                skipZeroForEstimationRatio: false,
+                context: undefined,
+                useLocalTime: true,
+                showSayDo: false,
+
+                /**
+                 * Colors for Cell Renderers
+                 */
+                red: '#ff9999',
+                yellow: '#ffffcc',
+                green: '#ccffcc',
+                grey: '#e6e6e6',
+                benchmarkGreen: 80,
+                benchmarkField: '__ratioEstimated',
+                defaultRange: {
+                    red: 0,
+                    yellow: 60,
+                    green: 90,
+                    direction: 'red,yellow,green'
+                },
+
+                /**
+                 * Display settings for column names, whether or not to display columns,
+                 * tooltips and default ranges
+                 */
+                displaySettings: {
+                    Name: {
+                        displayName: 'Iteration',
+                        display: true,
+                        colAlign: 'left'
+                    },
+                    StartDate: {
+                        display: true,
+                        displayName: 'Start Date',
+                        colAlign: 'center'
+                    },
+                    EndDate: {
+                        display: true,
+                        displayName: 'End Date',
+                        colAlign: 'center'
+                    },
+                    __days: {
+                        display: true,
+                        displayName: '# Days',
+                        tooltip: "The number of full days in the iteration " +
+                            "(Excluding weekends)"
+                    },
+
+                    __ratioEstimated: {
+                        display: true,
+                        displayName: 'Percent Estimated',
+                        range: {
+                            red: 0,
+                            yellow: 75,
+                            green: 95,
+                            direction: 'red,yellow,green'
+                        },
+                        tooltip: "<h1>Description</h1>" +
+                            "Represents the ratio of work items (stories and defects) that have estimates." +
+                            "<h1>How it is calculated</h1>" +
+                            "Divide the number of work items (stories and defects) in the iteration that have a plan " +
+                            "estimate that is not null by the total number of items in the iteration multiplied by 100. " +
+                            "<h1>Coaching Tip</h1>" +
+                            "If there is a very high percentage or stories without estimates, other measures will not " +
+                            "be meaningful.  This is really only useful for the beginning of an iteration, and perhaps " +
+                            "for an iteration in early flight, but not for an iteration that has ended.  The idea is to " +
+                            "catch this early in an iteration so other charts/graphs etc are useful for teams.  A good " +
+                            "practice is to have a ready backlog as and entrance criteria to an iteration planning session, " +
+                            "a ready backlog means three things, sized, ranked, and stories are elaborated sufficiently with " +
+                            "acceptance criteria to enable conversation and confirmation during planning."
+                    },
+                    __ratioInProgress: {
+                        display: true,
+                        range: {
+                            green: 0,
+                            yellow: 35,
+                            red: 50,
+                            direction: 'green,yellow,red'
+                        },
+                        displayName: 'Average Daily In-Progress Percentage',
+                        tooltip: "<h1>Description</h1>" +
+                            "This is an indication of how much work is in progress (WIP).  It is the ratio of the average of " +
+                            "the work items in the in-Progress state on a daily basis. " +
+                            "<h1>How it is calculated</h1>" +
+                            "Divide the plan estimate of all the work items in the 'in-progress' state by the total plan estimate " +
+                            "of the work items in the iteration, divided by the number of days.  If the iteration is in-flight, we'll " +
+                            "divide by the number of days so far.   If analysis type is set to counts, the calculation is based on the " +
+                            "count of the work items, not the plan estimate of the work items." +
+                            "<h1>Coaching Tip</h1>" +
+                            "A high percentage here would mean that there is a high degree of daily WIP on average.  Keeping WIP small, " +
+                            "reduces context switching and helps team focus on the most important items to reach acceptance."
+                    },
+                    __halfAcceptedRatio: {
+                        display: false,
+                        range: {
+                            green: 0,
+                            yellow: 65,
+                            red: 90,
+                            direction: 'green,yellow,red'
+                        },
+                        displayName: 'Acceptance Rate Score',
+                        tooltip: "<h1>Description</h1>" +
+                            "This is an indication of how well teams are doing with accepting work throughout the iteration.  A high " +
+                            "percentage would mean that half of the work is being accepted near the end of the iteration.  100% would mean " +
+                            "that on the last day of the iteration, the team has accepted at least 1/2 of the committed work.  For a 10 day " +
+                            "iteration, for example, 25% would mean that 1/2 of the committed work was accepted before day 3." +
+                            "<h1>How it is calculated</h1>" +
+                            "Find the percentage of plan estimate points that are accepted at the end of every day of the sprint and determine " +
+                            "what part of the sprint that number passes 50%.  If analysis type is set to counts, the calculation is based on " +
+                            "the count of the work items, not the plan estimate of the work items.  Should the percentage of points accepted " +
+                            "drop below 50%, the point at which 50% acceptance is achieved is reset, until 50% is once again achieved." +
+                            "<h1>Coaching Tip</h1>" +
+                            "Common causes of work being accepted late are:  Product Owner is absent or at least not actively participating with the " +
+                            "team on a daily basis.  Stories do not have clear acceptance criteria.  Teams lack a clear definition of done for stories, " +
+                            "to name a few.  A team that tends to accept work items late in the iteration may risk meeting commitment. "
+                    },
+                    __halfAcceptedDate: {
+                        display: false,
+                        displayName: "Acceptance Rate Score Date"
+                    },
+                    __endCompletionRatio: {
+                        display: true,
+                        range: {
+                            red: 0,
+                            yellow: 95,
+                            green: 100,
+                            direction: 'red,yellow,green'
+                        },
+                        displayName: 'Last Day Completion Ratio',
+                        tooltip: "<h1>Description</h1>" +
+                            "Represent the ratio of work completed by iteration end.  A low percentage migh imply that there is work planned into an " +
+                            "iteration that was left in a schedule state lower than completed." +
+                            "<h1>How it is Calculated</h1>" +
+                            "Divide the plan estimates of the work items in the iteration that are in a schedule state that is Completed " +
+                            "or higher at the end of the last day of the iteration by the total plan estimate of all work items in the iteration. " +
+                            "If analysis type is set to 'counts', the calculation is based on the count of the work items, not the plan estimate " +
+                            "of the work items."
+                    },
+                    __endIncompletionRatio: {
+                        display: false,
+                        range: {
+                            green: 0,
+                            yellow: 5,
+                            red: 10,
+                            direction: 'green,yellow,red'
+                        },
+                        displayName: "Last Day Incompletion Ratio"
+                    },
+                    __endAcceptanceRatio: {
+                        display: true,
+                        displayName: 'Last Day Acceptance Ratio',
+                        range: {
+                            red: 0,
+                            yellow: 80,
+                            green: 95,
+                            direction: 'red,yellow,green'
+                        },
+                        tooltip: "<h1>Description</h1>" +
+                            "Indicates whether teams met their commitment, assuming work items have not been removed from the iteration. " +
+                            "<h1>How it is calculated</h1>" +
+                            "Divide the plan estimates of the work items in the iteration that were accepted on the last day of the iteration " +
+                            "by the total plan estimate of all work items in the iteration.  If analysis type is set to 'counts', the calculation " +
+                            "is based on the number of work items, not the plan estimate of the work items.",
+                        health_ratio_in_progress: "<h1>Description</h1>" +
+                            "This is an indication of how much work is in progress (WIP).  It is the ratio of the average of " +
+                            "the work items in the in-Progress state on a daily basis. " +
+                            "<h1>How it is calculated</h1>" +
+                            "Divide the plan estimate of all the work items in the 'in-progress' state by the total plan estimate " +
+                            "of the work items in the iteration, divided by the number of days.  If the iteration is in-flight, we'll " +
+                            "divide by the number of days so far.   If analysis type is set to �counts�, the calculation is based on the " +
+                            "count of the work items, not the plan estimate of the work items." +
+                            "<h1>Coaching Tip</h1>" +
+                            "A high percentage here would mean that there is a high degree of daily WIP on average.  Keeping WIP small, " +
+                            "reduces context switching and helps team focus on the most important items to reach acceptance."
+                    },
+                    __scopeChurn: {
+                        display: true,
+                        displayName: 'Scope Churn',
+                        tooltip: "<h1>Description</h1>" +
+                            "Churn is a measure of the change in the iteration's scope." +
+                            "Churn Direction is an indicator of the general direction of scope change.  Churn is defined as a standard deviation, which " +
+                            "is always zero or positive, so this added indicator provides an indication of whether scope tended to be added or removed " +
+                            "<h1>How it is calculated</h1>" +
+                            "It is defined as the standard deviation of the total scheduled into the sprint divided by the average daily total." +
+                            "The direction is determined by examining every day's change from the day before and adding or subtracting the delta to determine " +
+                            "whether scope has been added more often than subtracted. (The first day of the iteration is excluded from this calculation.)"
+                    },
+                    __taskChurn: {
+                        display: true,
+                        displayName: 'Percentage of Task Removal at Iteration End',
+                        tooltip: "<h1>Description</h1>" +
+                            "An additional metric indicating when tasks have been added or removed on the last day of the iteration.  If a signivicant" +
+                            "percentage of tasks are removed, it could be an indicator that the team is moving committed work items to another iteration." +
+                            "<h1>How it is calculated</h1>" +
+                            "The number of estimated hours for the tasks scheduled in the iteration on the last day are subtracted from the total estimated " +
+                            "hours of tasks scheduled on the next-to-last day, then divided by the next-to-last-day totals to create a percentage.  Note " +
+                            "that this is calculated from the <b>estimates</b> of all the tasks, not the hours remaining to-do"
+                    },
+                    __velocityVariance: {
+                        display: true,
+                        displayName: 'Velocity Variance',
+                        range: {
+                            green: 0,
+                            yellow: 13,
+                            red: 20,
+                            direction: 'green,yellow,red'
+                        },
+                        tooltip: "<h1>Description</h1>" +
+                            "Velocity Variance is the % variance of the velocity from the average of a number of previous sprints (e.g. 3). If there is" +
+                            " only data from less than that number, then that data will be used.  Otherwise the velocity variance will show as No Data.  " +
+                            "<h1>How it is calculated</h1>" +
+                            "The velocity used in this calculation is the current velocity, which is calculated by adding all stories associated with " +
+                            "the iteration as of the current date"
+                    },
+                    __cycleTime: {
+                        display: true,
+                        displayName: 'Avg Cycle Time',
+                        range: {
+                            green: 0,
+                            yellow: 4,
+                            red: 6,
+                            direction: 'green,yellow,red'
+                        },
+                        tooltip: "<h1>Description</h1>" +
+                            "Cycle Time in this report is the average number of days betweens starting and finishing a story in the sprint." +
+                            "<h1>How it is calculated</h1>" +
+                            "The displayed result is the number of days between the In Progress Date and the Accepted Date."
+                    },
+                    __sayDoRatioData: {
+                        display: false,
+                        displayName: 'Say Do Ratio',
+                        range: {
+                            green: 0,
+                            yellow: 0,
+                            red: 0,
+                            direction: 'red,yellow,green'
+                        },
+                        tooltip: "<h1>Description</h1>" +
+                            "Say Do Ratio is calculated from the items associated on the first day of the sprint compared to the status " +
+                            "of the same items on the last day of the sprint." +
+                            "<h1>How it is calculated</h1>" +
+                            "If a story or defect is assigned to the sprint on the first day of the sprint, then its size or count is " +
+                            "added to the starting total.  If a story or defect from that group only is still in the sprint at the last day " +
+                            "AND has been accepted, then the points/count <em>from the start</em> is added to the ending total.  The Say/Do Ratio is the division of " +
+                            "end value by start value.  Items can be counted in the start but not the end by not being (at least) accepted or " +
+                            "by not being in the sprint any more on the last day.  Items not counted at all are ones that are in the sprint on " +
+                            "the last day but were not added to the sprint until after the first day."
+                    }
+                },
+
+                constructor: function (config) {
+                    Ext.apply(this, config);
+                    this.mixins.observable.constructor.call(this, config);
+
+                    this.addEvents(
+                        'rangechanged',
+                        'ready'
+                    );
+
+                    //Get settings and preferences here
+                    if (this.appId) {
+                        Rally.technicalservices.WsapiToolbox.fetchPreferences(this.appId).then({
+                            scope: this,
+                            success: function (prefs) {
+                                if (prefs && prefs['rally-tech-services-ranges']) {
+                                    var savedRanges = Ext.JSON.decode(prefs[
+                                        'rally-tech-services-ranges']);
+                                    _.each(savedRanges, function (value, key) {
+                                        this.displaySettings[key].range = value;
+                                    }, this);
+                                }
+                                this.fireEvent('ready');
+                            }
+                        });
+                    } else {
+                        this.fireEvent('ready');
+                    }
+
+                },
+                getRenderer: function (field, v, m, r, r_idx, c_idx) {
+
+                    var useLocalTime = Rally.getApp().getSetting('useLocalTime');
+
+                    if (field == 'StartDate' || field == 'EndDate') {
+                        if (useLocalTime) {
+                            field = 'shortDate';
+                        } else {
+                            field = 'longDate';
+                        }
+                    }
+
+                    if (this.renderers[field]) {
+                        return this.renderers[field];
+                    }
+                    return this.renderers.defaultRenderer;
+                },
+                renderers: {
+                    defaultRenderer: function (v, m, r) {
+                        if (!isNaN(v)) {
+                            m.style = "text-align:right;";
+                        }
+                        return v;
+                    },
+                    __days: function (v, m, r) {
+                        m.style = "padding-right:7px;text-align:right;";
+                        return v;
+                    },
+
+                    longDate: function (value, m) {
+                        if (value && new Date(value) !== 'Invalid Date') {
+                            m.style = "text-align:center;";
+
+                            value = moment(value);
+                            var wks = Rally.getApp().getContext().getWorkspace();
+                            var timezone = wks.WorkspaceConfiguration.TimeZone;
+
+                            return value.tz(timezone).format('YYYY-MMM-DD h:mm a z');
+                            //                value = new Date(value);
+                            //                return Rally.util.DateTime.formatWithDefaultDateTime(value, Rally.getApp().getContext());
+                        }
+                        return "";
+                    },
+
+                    shortDate: function (value, m) {
+
+                        if (value && new Date(value) !== 'Invalid Date') {
+                            value = new Date(value);
+                            m.style = "text-align:center;";
+                            return Rally.util.DateTime.formatWithDefault(value, this.context);
+                        }
+                        return "";
+                    },
+
+                    __ratioEstimated: function (value, metaData, record) {
+                        if (!this.usePoints) {
+                            return "N/A";
+                        }
+
+                        if (value < 0 || value > 1) {
+                            metaData.style = 'padding-right:7px;text-align:right;background-color:' +
+                                this.grey;
+                            return "No Data";
+                        }
+                        var percent = parseInt(100 * value, 10);
+                        var ranges = this.displaySettings.__ratioEstimated.range || this.defaultRange;
+
+                        var color = this.red;
+                        if (percent >= ranges.yellow) {
+                            color = this.yellow;
+                        }
+                        if (percent >= ranges.green) {
+                            color = this.green;
+                        }
+
+                        metaData.style = 'padding-right:7px;text-align:right;background-color:' +
+                            color;
+                        return percent + "%";
+                    },
+                    __ratioInProgress: function (value, metaData, record) {
+                        if (value < 0) {
+                            metaData.style = "text-align:right;background-color: " + this.grey;
+                            return "No Data";
+                        }
+
+
+                        var percent = parseInt(100 * value, 10),
+                            ranges = this.displaySettings.__ratioInProgress.range,
+                            color = this.renderers.getRangeColor(percent, record, ranges, this,
+                                true);
+
+                        if (color) {
+                            metaData.style =
+                                "padding-right:7px;text-align:right;background-color: " + color;
+                        }
+                        return percent + "%";
+                    },
+                    __halfAcceptedRatio: function (value, metaData, record) {
+                        var ranges = this.displaySettings.__halfAcceptedRatio.range;
+                        var color = this.green;
+
+                        if (value < 0) {
+                            metaData.style =
+                                "padding-right:7px;text-align:right;background-color: " + this.grey;
+                            return "No Data";
+                        }
+                        var percent = parseInt(100 * value, 10),
+                            text = "Never";
+
+                        if (percent < 200) {
+                            if (this.showDateForHalfAcceptanceRatio) {
+                                var date = record.get('__halfAcceptedDate');
+                                if (!isNaN(Date.parse(date))) {
+                                    text = Ext.String.format('{0}% ({1})', percent, this.renderers.shortDate(
+                                        date, metaData));
+                                }
+                            } else {
+                                text = Ext.String.format('{0}%', percent);
+                            }
+                        }
+                        color = this.renderers.getRangeColor(percent, record, ranges, this, true);
+                        metaData.style = "padding-right:7px;text-align:right;background-color: " +
+                            color;
+                        return text;
+                    },
+                    __sayDoRatioData: function (value, metaData, record) {
+                        var ranges = this.displaySettings.__sayDoRatioData.range;
+                        console.log('ranges:', ranges);
+
+                        var color = this.green;
+
+                        var field = 'count_ratio';
+                        if (this.usePoints) {
+                            field = 'size_ratio';
+                        }
+
+                        value = record.get('__sayDoRatioData') && record.get('__sayDoRatioData')[
+                            field];
+
+                        if (Ext.isEmpty(value)) {
+                            metaData.style =
+                                "padding-right:7px;text-align:right;background-color: " + this.grey;
+                            return "--";
+                        }
+                        if (value < 0) {
+                            metaData.style =
+                                "padding-right:7px;text-align:right;background-color: " + this.grey;
+                            return "N/A";
+                        }
+                        var percent = parseInt(100 * value, 10),
+                            text = "Never";
+
+
+                        text = Ext.String.format('{0}%', percent);
+
+                        color = this.renderers.getRangeColor(percent, record, ranges, this, true);
+                        metaData.style = "padding-right:7px;text-align:right;background-color: " +
+                            color;
+                        return text;
+                    },
+                    getRangeColor: function (percent, record, ranges, config, check_grey) {
+                        var should_be_grey = (check_grey && config.renderers.shouldBeGrey(config,
+                                record)),
+                            color_range = ranges.direction.split(',');
+
+                        if (should_be_grey) {
+                            return config.grey;
+                        }
+
+                        var color_code = color_range[0];
+                        Ext.each(color_range, function (c) {
+                            if (percent >= ranges[c]) {
+                                color_code = c;
+                            }
+                        });
+
+                        return config[color_code];
+
+                    },
+                    shouldBeGrey: function (config, record) {
+                        var check_percent = record.get(config.benchmarkField) * 100;
+                        return (check_percent < config.benchmarkGreen && config.usePoints);
+                    },
+                    __endCompletionRatio: function (value, metaData, record) {
+                        if (value < 0) {
+                            metaData.style =
+                                "padding-right:7px;text-align:right;background-color: " + this.grey;
+                            return "No Data";
+                        }
+                        var ranges = this.displaySettings.__endCompletionRatio.range,
+                            percent = parseInt(100 * value, 10),
+                            text = (percent == 200) ? "No Data" : (percent + "%");
+
+
+                        var color = this.renderers.getRangeColor(percent, record, ranges, this,
+                            true);
+
+                        metaData.style = "text-align:right;background-color: " + color;
+                        return text;
+                    },
+                    __endAcceptanceRatio: function (value, metaData, record) {
+
+                        if (value < 0) {
+                            metaData.style =
+                                "padding-right:7px;text-align:right;background-color: " + this.grey;
+                            return "No Data";
+                        }
+                        var percent = parseInt(100 * value, 10);
+                        var text = (percent == 200) ? "No Data" : (percent + "%");
+                        var ranges = this.displaySettings.__endAcceptanceRatio.range;
+
+
+                        var color = this.renderers.getRangeColor(percent, record, ranges, this,
+                            true);
+
+                        metaData.style = "padding-right:7px;text-align:right;background-color: " +
+                            color;
+
+                        return text;
+                    },
+                    __scopeChurn: function (value, metaData, record) {
+
+                        var color = this.renderers.shouldBeGrey(this, record) ? this.grey : "white";
+
+                        var direction = 1,
+                            icon_string = "";
+                        if (value != 0) {
+                            direction = value / Math.abs(value);
+                            var icon = direction < 0 ? "icon-minus" : "icon-plus"; //"<img src='/slm/mashup/1.11/images/plus.gif' title='up'>";
+                            icon_string = Ext.String.format(
+                                '<div class= "control {0}" style:="display:inline;"></div>',
+                                icon);
+                        }
+
+                        var percent = parseInt(100 * Math.abs(value), 10),
+                            text = (percent < 200) ? (percent + "%") : "No Data";
+
+                        if (percent == 0 || text == "No Data") {
+                            icon_string = "";
+                        }
+
+                        metaData.style = "padding-right:7px;background-color: " + color;
+
+                        if (text == "No Data") {
+                            return Ext.String.format(
+                                '<div style="display:inline;text-align:right;float:right;background-color:{0};">{1}</div>{2}',
+                                color, text, icon_string);
+                        }
+                        return Ext.String.format(
+                            '<div style="display:inline;width:35px;text-align:right;float:right;background-color:{0};">{1}</div>{2}',
+                            color, text, icon_string);
+                    },
+                    __taskChurn: function (value, metaData, record) {
+
+                        var text = "No Data",
+                            direction = 0,
+                            icon_string = "";
+                        var color = this.renderers.shouldBeGrey(this, record) ? this.grey : "white";
+                        metaData.style = "padding-right:7px;background-color: " + color;
+
+                        if (value == Infinity) {
+                            text = "Infinity";
+                            return Ext.String.format(
+                                '<div style="display:inline;text-align:right;float:right;background-color:{0};">{1}</div>{2}',
+                                color, text, icon_string);
+                        }
+
+                        if (value != -2) {
+                            var percent = parseInt(100 * Math.abs(value), 10);
+                            text = percent + "%";
+                            if (value != 0) {
+                                direction = value / Math.abs(value);
+                                var icon = direction < 0 ? "icon-minus" : "icon-plus"; //"<img src='/slm/mashup/1.11/images/plus.gif' title='up'>";
+                                icon_string = Ext.String.format(
+                                    '<div class= "control {0}" style:="display:inline;"></div>',
+                                    icon);
+                            }
+                        } else {
+                            text = "No data";
+                            return Ext.String.format(
+                                '<div style="display:inline;text-align:right;float:right;background-color:{0};">{1}</div>{2}',
+                                color, text, icon_string);
+                        }
+                        return Ext.String.format(
+                            '<div style="display:inline;width:35px;text-align:right;float:right;background-color:{0};">{1}</div>{2}',
+                            color, text, icon_string);
+                    },
+                    __velocityVariance: function (value, metaData, record) {
+                        if (value === null) {
+                            metaData.style =
+                                "padding-right:7px;text-align:right;background-color: " + this.grey;
+                            return "N/A";
+                        }
+                        var percent = parseInt(100 * value, 10);
+                        var text = percent + "%";
+                        var ranges = this.displaySettings.__velocityVariance.range;
+
+                        var color = this.renderers.getRangeColor(Math.abs(percent), record, ranges,
+                            this, true);
+
+                        metaData.style = "padding-right:7px;text-align:right;background-color: " +
+                            color;
+
+                        return text;
+                    },
+                    __cycleTime: function (value, metaData, record) {
+                        if (value === null || value == -2) {
+                            metaData.style =
+                                "padding-right:7px;text-align:right;background-color: " + this.grey;
+                            return "N/A";
+                        }
+                        var days = Ext.util.Format.number(value, "0.##");
+
+                        var ranges = this.displaySettings.__cycleTime.range;
+
+                        var color = this.renderers.getRangeColor(Math.abs(days), record, ranges,
+                            this, true);
+
+                        metaData.style = "padding-right:7px;text-align:right;background-color: " +
+                            color;
+
+                        return days;
+                    }
+
+                },
+                getRangeColors: function (range) {
+                    var colors = range.direction.split(',');
+                    return colors.slice(-2);
+                },
+                getRangeLabel: function (range) {
+                    var colors = range.direction.split(',');
+                    return Ext.String.format('Range ({0})', colors.join('/'));
+                },
+                setRanges: function (name, range) {
+
+                    this.displaySettings[name].range = range;
+
+                    var ranges = {};
+                    _.each(_.keys(this.displaySettings), function (key) {
+                        if (this.displaySettings[key].range) {
+                            ranges[key] = this.displaySettings[key].range;
+                        }
+                    }, this);
+
+                    Rally.data.PreferenceManager.update({
+                        appID: this.appId,
+                        settings: {
+                            'rally-tech-services-ranges': Ext.JSON.encode(ranges)
+                        },
+                        scope: this,
+                        success: function (updatedRecords, notUpdatedRecords) {
+                            this.logger.log(
+                                "Successfully saved preference 'rally-tech-services-ranges'",
+                                updatedRecords, notUpdatedRecords);
+                        },
+                        failure: function () {
+                            this.logger.log('Failed to save ranges');
+                        }
+                    });
+                    this.fireEvent('rangechanged');
+                },
+                getTooltip: function (name) {
+                    if (this.displaySettings[name]) {
+                        return this.displaySettings[name].tooltip || this.displaySettings[name].displayName ||
+                            name;
+                    }
+                    return name;
+                },
+                updateSettings: function (settings) {
+                    if (settings.hideTaskMovementColumn === true || settings.hideTaskMovementColumn ===
+                        "true") {
+                        this.displaySettings.__taskChurn.display = false;
+                    } else {
+                        this.displaySettings.__taskChurn.display = true;
+                    }
+                    if (settings.showDateForHalfAcceptanceRatio === true || settings.showDateForHalfAcceptanceRatio ===
+                        "true") {
+                        this.showDateForHalfAcceptanceRatio = true;
+                    } else {
+                        this.showDateForHalfAcceptanceRatio = false;
+                    }
+                    if (settings.showVelocityVariation === true || settings.showVelocityVariation ===
+                        "true") {
+                        this.displaySettings.__velocityVariance.display = true;
+                    } else {
+                        this.displaySettings.__velocityVariance.display = false;
+                    }
+
+                    this.showSayDo = settings.showSayDo || false;
+                    this.displaySettings.__sayDoRatioData.display = this.showSayDo;
+
+                    if (settings.showIterationCycleTime != false && settings.showIterationCycleTime !=
+                        "false") {
+                        this.displaySettings.__cycleTime.display = true;
+                        if (settings.showIterationCycleTime == "inprogress-to-accepted") {
+                            this.displaySettings.__cycleTime.tooltip = "<h1>Description</h1>" +
+                                "Cycle Time in this report is the average number of days betweens starting and finishing a story in the sprint." +
+                                "<h1>How it is calculated</h1>" +
+                                "The displayed result is the number of days between the In Progress Date and the Accepted Date."
+                        } else {
+                            this.displaySettings.__cycleTime.tooltip = "<h1>Description</h1>" +
+                                "Cycle Time in this report is the average number of days betweens starting and finishing a story in the sprint." +
+                                "<h1>How it is calculated</h1>" +
+                                "The displayed result is the number of days between the first time an artifact went into In-Progress and the last " +
+                                "time it went into Completed."
+                        }
+
+                    } else {
+                        this.displaySettings.__cycleTime.display = false;
+                    }
+
+                }
+            });
+
+
+            Ext.define('Rally.technicalservices.util.Health', {
+                singleton: true,
+                /**
+                 *
+                 * @param {} an_array  an array of numbers
+                 *
+                 * returns the standard deviation
+                 */
+                getStandardDeviation: function (an_array) {
+                    var mean = Ext.Array.mean(an_array);
+                    var numerator = 0;
+
+                    Ext.Array.each(an_array, function (item) {
+                        numerator += (mean - item) * (mean - item);
+                    });
+
+                    var deviation = Math.sqrt(numerator / an_array.length);
+
+                    return deviation;
+                },
+                /**
+                 * Go through the array of day totals.  If there are
+                 * more going up than down, return 1, if more going down than
+                 * going up, return -1
+                 */
+                getChurnDirection: function (totals) {
+                    var variance = 0;
+                    var last_value = 0;
+                    Ext.Array.each(totals, function (totals, index) {
+                        if (index > 0) {
+                            variance = variance + (totals - last_value);
+                        }
+                        last_value = totals;
+                    });
+                    if (variance && variance !== 0) {
+                        return variance / Math.abs(variance);
+                    }
+                    return 1;
+                },
+                getChurn: function (health_hash) {
+                    var totals = [],
+                        days = _.keys(health_hash);
+
+                    var dev_ratio = 0;
+                    _.each(days, function (day) {
+                        totals.push(Rally.technicalservices.util.Health.getDayTotal(
+                            health_hash, day));
+                    });
+
+                    var stdev = Rally.technicalservices.util.Health.getStandardDeviation(totals);
+                    if (stdev >= 0 && Ext.Array.mean(totals) != 0) {
+                        dev_ratio = Ext.util.Format.number(stdev / Ext.Array.mean(totals), "0.00");
+                    }
+                    var direction = Rally.technicalservices.util.Health.getChurnDirection(totals);
+
+                    var churn = dev_ratio * direction;
+                    if (!isNaN(churn)) {
+                        return dev_ratio * direction;
+                    }
+                    return null;
+                },
+                getDayTotal: function (hash, key) {
+                    if (hash[key]) {
+                        return Ext.Array.sum(_.values(hash[key]));
+                    }
+                    return 0;
+                },
+                getTaskChurn: function (health_hash) {
+
+                    var previous_value = null;
+                    var last_day_value = null,
+                        days = _.keys(health_hash);
+
+                    _.each(days, function (day) {
+                        if (last_day_value != null) {
+                            previous_value = last_day_value;
+                        }
+                        last_day_value = Rally.technicalservices.util.Health.getDayTotal(
+                            health_hash, day);
+                    });
+
+                    if (last_day_value == null || previous_value == null || (last_day_value == 0 &&
+                            previous_value == 0)) {
+                        return null;
+                    }
+                    return Ext.util.Format.number((last_day_value - previous_value) /
+                        previous_value, "0.00");
+                },
+                getAverageInState: function (health_hash, state) {
+                    var totals = [],
+                        days = _.keys(health_hash);
+
+                    _.each(days, function (day) {
+                        var day_total = Ext.Array.sum(_.values(health_hash[day])),
+                            day_in_state = health_hash[day][state] || 0;
+                        if (day_total > 0) {
+                            totals.push(day_in_state / day_total);
+                        } else {
+                            totals.push(0);
+                        }
+                    });
+
+                    return Ext.util.Format.number(Ext.Array.mean(totals), "0.00");
+                },
+                getDayTotalsArray: function (health_hash) {
+                    var day_totals = [];
+                    _.each(health_hash, function (state_hash, day) {
+                        day_totals.push(Rally.technicalservices.util.Health.getDayTotal(
+                            health_hash, day));
+                    });
+                    return day_totals;
+                },
+                getDoneStatesHash: function (health_hash, done_states) {
+                    var done_hash = {};
+                    _.each(health_hash, function (state_hash, date) {
+                        done_hash[date] = 0;
+                        _.each(done_states, function (state) {
+                            done_hash[date] += state_hash[state] || 0;
+                        });
+                    });
+                    return done_hash;
+                },
+                getAllHash: function (health_hash) {
+                    var hash = {};
+                    _.each(health_hash, function (state_hash, day) {
+                        hash[day] = Rally.technicalservices.util.Health.getDayTotal(
+                            health_hash, day);
+                    });
+                    return hash;
+                },
+                getVelocity: function (health_hash, done_states) {
+                    var done_hash = Rally.technicalservices.util.Health.getDoneStatesHash(
+                        health_hash, done_states);
+                    var days = _.sortBy(_.keys(done_hash), function (date) {
+                        return Date.parse(date)
+                    });
+                    return done_hash[days[days.length - 1]] || 0;
+                },
+                getHalfAcceptanceRatio: function (health_hash, done_states, num_days_in_iteration) {
+
+                    var done_hash = Rally.technicalservices.util.Health.getDoneStatesHash(
+                            health_hash, done_states),
+                        total_hash = Rally.technicalservices.util.Health.getAllHash(health_hash);
+
+                    var day_index = -1,
+                        day_counter = 0,
+                        day_accomplished = null;
+
+                    var days = _.sortBy(_.keys(total_hash), function (date) {
+                        return Date.parse(date)
+                    });
+
+                    _.each(days, function (day) {
+                        day_counter++;
+
+                        var total = total_hash[day] || 0;
+                        var day_accepted = done_hash[day] || 0;
+
+                        if (day_accepted / total >= 0.5 && day_index === -1) {
+                            day_index = day_counter;
+                            day_accomplished = day;
+                        } else if (day_accepted / total < 0.5 && day_index > -1) {
+                            // if we slipped back to under 50%
+                            day_index = -1;
+                            day_accomplished = null;
+                        }
+                    });
+                    var ratio = 2;
+                    if (day_index > -1) {
+                        if (num_days_in_iteration > -1) {
+                            day_counter = num_days_in_iteration;
+                        }
+
+                        ratio = Ext.util.Format.number(day_index / day_counter, "0.00");
+                    }
+
+                    return {
+                        Ratio: ratio,
+                        ratioDate: day_accomplished
+                    };
+                },
+                /**
+                 * Given a hash of hashes structured as:
+                 *
+                 * The outer hash key is state (plus "All")
+                 * The inner hash key is date (in JS date format)
+                 * The inner value is the sum of estimates for that day
+                 */
+                getIncompletionRatio: function (health_hash, done_states, completed_state) {
+
+                    var done_hash = Rally.technicalservices.util.Health.getDoneStatesHash(
+                            health_hash, done_states),
+                        dates = _.keys(health_hash),
+                        last_date = dates.pop(),
+                        last_total = Rally.technicalservices.util.Health.getDayTotal(health_hash,
+                            last_date),
+                        last_accepted = done_hash[last_date],
+                        last_completed = health_hash[last_date] && health_hash[last_date][
+                            completed_state
+                        ] || 0;
+
+                    var ratio = 2;
+                    if (last_total > 0) {
+                        ratio = 1 - ((last_completed + last_accepted) / last_total);
+                    }
+                    ratio = Ext.util.Format.number(ratio, "0.00");
+
+                    var inverse_ratio = 2;
+                    if (last_total > 0) {
+                        inverse_ratio = Ext.util.Format.number(1 - ratio, "0.00");
+                    }
+                    return {
+                        CompletionRatio: inverse_ratio,
+                        IncompletionRatio: ratio
+                    };
+
+                },
+                getVelocityVariance: function (velocity, previousVelocities,
+                    minNumberPreviousVelocities) {
+                    if (previousVelocities && previousVelocities.length >=
+                        minNumberPreviousVelocities) {
+                        var average_velocity = Ext.Array.mean(previousVelocities),
+                            velocity_variance = 0;
+
+                        if (average_velocity > 0) {
+                            velocity_variance = Number(velocity / average_velocity - 1);
+                            return velocity_variance;
+                        }
+                    }
+                    return null;
+                },
+                /**
+                 * Given a hash of hashes structured as:
+                 *
+                 * The outer hash key is state (plus "All")
+                 * The inner hash key is date (in JS date format)
+                 * The inner value is the sum of estimates for that day
+                 */
+                getAcceptanceRatio: function (health_hash, done_states) {
+                    var ratio = 2,
+                        done_hash = Rally.technicalservices.util.Health.getDoneStatesHash(
+                            health_hash, done_states);
+
+                    var card_dates = _.keys(health_hash),
+                        last_date = card_dates.pop(),
+                        last_total = Rally.technicalservices.util.Health.getDayTotal(health_hash,
+                            last_date),
+                        last_accepted = done_hash[last_date] || 0;
+
+                    if (last_total > 0) {
+                        ratio = last_accepted / last_total;
+                    }
+                    ratio = Ext.util.Format.number(ratio, "0.00");
+                    return ratio;
+                },
+                daysBetween: function (begin_date_js, end_date_js, skip_weekends) {
+                    var dDate1 = Ext.clone(begin_date_js);
+                    var dDate2 = Ext.clone(end_date_js);
+
+                    if (dDate1 == dDate2) {
+                        return 0;
+                    }
+                    if (typeof dDate1 === "number") {
+                        dDate1 = new Date(dDate1);
+                    }
+                    if (typeof dDate2 === "number") {
+                        dDate2 = new Date(dDate2);
+                    }
+
+                    //console.log('difference ', dDate1, dDate2);
+
+                    if (!skip_weekends) {
+                        return Math.abs(Rally.util.DateTime.getDifference(dDate1, dDate2, 'day'));
+                    } else {
+                        // BRUTE FORCE
+                        if (dDate2 < dDate1) {
+                            var x = dDate2;
+                            dDate2 = dDate1;
+                            dDate1 = x;
+                        }
+                        var counter = 0;
+                        var date_chit = dDate1;
+                        while (date_chit < dDate2) {
+
+                            var day_of_week = date_chit.getDay();
+                            //console.log('  ', day_of_week, date_chit);
+                            if (day_of_week != 0 && day_of_week != 6) {
+                                counter++;
+                            }
+                            var next_day = Rally.util.DateTime.add(date_chit, "day", 1);
+                            date_chit = next_day;
+                        }
+
+                        //console.log('--', counter);
+                        return counter;
+                    }
+                }
+            });
+
+            Ext.define('Rally.technicalservices.ModelBuilder', {
+                singleton: true,
+
+                build: function (modelType, newModelName) {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    Rally.data.ModelFactory.getModel({
+                        type: modelType,
+                        success: function (model) {
+
+                            var default_fields = [{
+                                name: '__ratioEstimated',
+                                defaultValue: -1
+                            }, {
+                                name: '__days',
+                                convert: function (value, record) {
+                                    if (record.get('EndDate') && record.get(
+                                            'StartDate')) {
+                                        return Rally.technicalservices.util
+                                            .Health.daysBetween(record.get(
+                                                'EndDate'), record.get(
+                                                'StartDate'), true);
+                                    } else {
+                                        return '--';
+                                    }
+
+                                }
+                            }, {
+                                name: '__ratioInProgress',
+                                defaultValue: -1
+                            }, {
+                                name: '__halfAcceptedRatio',
+                                defaultValue: -1
+                            }, {
+                                name: '__halfAcceptedDate',
+                                defaultValue: ''
+                            }, {
+                                name: '__endCompletionRatio',
+                                defaultValue: -1
+                            }, {
+                                name: '__endAcceptanceRatio',
+                                defaultValue: -1 //2
+                            }, {
+                                name: '__endIncompletionRatio',
+                                defaultValue: -1
+                            }, {
+                                name: '__taskChurn',
+                                defaultValue: -2
+                            }, {
+                                name: '__scopeChurn',
+                                defaultValue: -2
+                            }, {
+                                name: '__velocity',
+                                defaultValue: -2
+                            }, {
+                                name: '__velocityVariance',
+                                defaultValue: null
+                            }, {
+                                name: '__currentVelocity',
+                                defaultValue: -2
+                            }, {
+                                name: '__cycleTime',
+                                defaultValue: -2
+                            }, {
+                                name: '__sayDoRatioData',
+                                type: 'object'
+                            }];
+
+                            var new_model = Ext.define(newModelName, {
+                                extend: model,
+                                logger: new Rally.technicalservices.Logger(),
+                                fields: default_fields,
+                                calculate: function (usePoints,
+                                    skipZeroForEstimation,
+                                    previousIterationCount, doneStates) {
+                                    this.resetDefaults();
+
+                                    var iteration_oid = this.get('ObjectID');
+
+                                    if (this.get('__cfdRecords')) {
+                                        this._processCFD(this.get(
+                                                '__cfdRecords'),
+                                            usePoints, doneStates);
+                                    }
+
+                                    if (this.get('__iterationArtifacts')) {
+                                        this._setArtifacts(this.get(
+                                                '__iterationArtifacts'),
+                                            doneStates, iteration_oid);
+                                        if (this.get(
+                                                '__previousIterationVelocities'
+                                            ) && this.get('EndDate') < new Date()) {
+                                            var variance = Rally.technicalservices
+                                                .util.Health.getVelocityVariance(
+                                                    this.get(
+                                                        '__currentVelocity'
+                                                    ), this.get(
+                                                        '__previousIterationVelocities'
+                                                    ),
+                                                    previousIterationCount);
+                                            this.set('__velocityVariance',
+                                                variance);
+                                        }
+
+
+
+                                    }
+
+
+                                },
+
+
+                                resetDefaults: function () {
+                                    this.set('__ratioInProgress', -1);
+                                    this.set('__halfAcceptedRatio', -1);
+                                    this.set('__halfAcceptedDate', '');
+                                    this.set('__endCompletionRatio', -1);
+                                    this.set('__endAcceptanceRatio' - 1);
+                                    this.set('__endIncompletionRatio', -1);
+                                    this.set('__taskChurn', -2);
+                                    this.set('__scopeChurn', -2);
+                                    this.set('__velocityVariance', null);
+                                    this.set('__cycleTime', -2);
+
+                                },
+                                _setError: function () {
+
+                                    var errorString = 'Error';
+
+                                    this.set('__ratioInProgress',
+                                        errorString);
+                                    this.set('__halfAcceptedRatio',
+                                        errorString);
+                                    this.set('__halfAcceptedDate',
+                                        errorString);
+
+                                    this.set('__endAcceptanceRatio',
+                                        errorString);
+                                    this.set('__endCompletionRatio',
+                                        errorString);
+                                    this.set('__endIncompletionRatio',
+                                        errorString);
+
+                                    this.set('__scopeChurn', errorString);
+                                    this.set('__taskChurn', errorString);
+
+                                    this.set('__velocityVariance',
+                                        errorString);
+
+                                },
+                                _processCFD: function (records, usePoints,
+                                    doneStates) {
+
+                                    var daily_totals = {},
+                                        daily_task_estimate_totals = {},
+                                        counter = 0;
+
+                                    Ext.Array.each(records, function (cf) {
+                                        var card_date = cf.CreationDate; //cf.get('CreationDate');
+
+                                        if (this._isValidDate(
+                                                card_date)) {
+                                            var card_total = cf.CardEstimateTotal ||
+                                                0,
+                                                card_state = cf.CardState,
+                                                card_task_estimate =
+                                                cf.TaskEstimateTotal ||
+                                                0;
+
+                                            if (usePoints === false) {
+                                                card_total = cf.CardCount ||
+                                                    0;
+                                            }
+                                            //this.logger.log('cardcount',this.get('Name'),card_state,card_date, cf.CardCount, cf.CardEstimateTotal,card_task_estimate);
+                                            if (!daily_totals[
+                                                    card_date]) {
+                                                daily_totals[
+                                                    card_date] = {};
+                                            }
+                                            if (!
+                                                daily_task_estimate_totals[
+                                                    card_date]) {
+                                                daily_task_estimate_totals
+                                                    [card_date] = {};
+                                            }
+
+                                            if (!daily_totals[
+                                                    card_date][
+                                                    card_state
+                                                ]) {
+                                                daily_totals[
+                                                    card_date][
+                                                    card_state
+                                                ] = 0;
+                                            }
+                                            if (!
+                                                daily_task_estimate_totals[
+                                                    card_date][
+                                                    card_state
+                                                ]) {
+                                                daily_task_estimate_totals
+                                                    [card_date][
+                                                        card_state
+                                                    ] = 0;
+                                            }
+                                            daily_totals[card_date]
+                                                [card_state] +=
+                                                card_total;
+                                            daily_task_estimate_totals
+                                                [card_date][
+                                                    card_state
+                                                ] +=
+                                                card_task_estimate;
+                                        }
+                                    }, this);
+
+                                    var completed_state = "Completed",
+                                        inprogress_state = "In-Progress",
+                                        days = this.get('__days');
+
+                                    //this.logger.log('totals',this.get('Name'),daily_totals, daily_task_estimate_totals, doneStates);
+
+                                    var avg_daily_in_progress = Rally.technicalservices
+                                        .util.Health.getAverageInState(
+                                            daily_totals, inprogress_state);
+                                    //this.logger.log('avg_daily_inprogress',this.get('Name'), avg_daily_in_progress)
+                                    if (avg_daily_in_progress > 0) {
+                                        this.set('__ratioInProgress',
+                                            avg_daily_in_progress);
+                                    }
+
+                                    var half_accepted_ratio = Rally.technicalservices
+                                        .util.Health.getHalfAcceptanceRatio(
+                                            daily_totals, doneStates, days);
+                                    this.set('__halfAcceptedRatio',
+                                        half_accepted_ratio.Ratio);
+                                    this.set('__halfAcceptedDate',
+                                        half_accepted_ratio.ratioDate);
+
+                                    this.set('__endAcceptanceRatio', Rally.technicalservices
+                                        .util.Health.getAcceptanceRatio(
+                                            daily_totals, doneStates))
+
+                                    var incompletion_stats = Rally.technicalservices
+                                        .util.Health.getIncompletionRatio(
+                                            daily_totals, doneStates,
+                                            completed_state);
+                                    this.set('__endCompletionRatio',
+                                        incompletion_stats.CompletionRatio
+                                    );
+                                    this.set('__endIncompletionRatio',
+                                        incompletion_stats.IncompletionRatio
+                                    );
+
+                                    var churn = Rally.technicalservices.util
+                                        .Health.getChurn(daily_totals);
+                                    if (churn !== null) {
+                                        this.set('__scopeChurn', Rally.technicalservices
+                                            .util.Health.getChurn(
+                                                daily_totals));
+                                    }
+
+                                    var task_churn = Rally.technicalservices
+                                        .util.Health.getTaskChurn(
+                                            daily_task_estimate_totals);
+                                    //this.logger.log('__taskChurn', 'getTaskChurn', this.get('Name'), task_churn);
+                                    if (task_churn !== null) {
+                                        this.set('__taskChurn', task_churn);
+                                    }
+
+                                    var velocity = Rally.technicalservices.util
+                                        .Health.getVelocity(daily_totals,
+                                            doneStates);
+                                    this.set('__velocity', velocity);
+
+                                },
+                                /**
+                                 * _isValidDate determines whether or not to use this card in the calculations.  This
+                                 * checks for weekends and if the date is within the sprint
+                                 *
+                                 * @param card_date
+                                 * @returns {boolean}
+                                 * @private
+                                 */
+                                _isValidDate: function (card_date) {
+                                    //NOTE: original app returns true of there is no start or end date in the iteration.
+                                    if (!card_date || (card_date.getDay() >
+                                            0 && card_date.getDay() < 6)) {
+                                        if (this.get('EndDate') && this.get(
+                                                'StartDate')) {
+                                            return (card_date <= this.get(
+                                                    'EndDate') &&
+                                                card_date >= this.get(
+                                                    'StartDate'));
+                                        }
+                                        return true;
+                                    }
+                                    return false;
+                                },
+                                _setArtifacts: function (records, doneStates,
+                                    thisIterationObjectID) {
+                                    var count_of_estimated_artifacts = 0;
+
+                                    var velocity = {},
+                                        this_velocity = 0,
+                                        this_count = 0,
+                                        cycle_times = [];
+
+                                    Ext.Array.each(records, function (
+                                        artifact) {
+                                        var artifact_iteration =
+                                            artifact.Iteration,
+                                            plan_estimate =
+                                            artifact.PlanEstimate;
+
+                                        this_count++;
+                                        if (!Ext.isEmpty(
+                                                plan_estimate) &&
+                                            plan_estimate >= 0) {
+                                            count_of_estimated_artifacts++;
+                                            if (Ext.Array.contains(
+                                                    doneStates,
+                                                    artifact.ScheduleState
+                                                )) {
+                                                this_velocity +=
+                                                    plan_estimate;
+                                            }
+                                        } else {
+                                            //this.logger.log('artifact not included plan_estimate -->', plan_estimate, artifact.FormattedID);
+                                        }
+
+                                        var cycleTime =
+                                            artifact_iteration.__cycleTime;
+
+                                        if (!Ext.isEmpty(cycleTime) &&
+                                            cycleTime != -2) {
+                                            cycle_times.push(
+                                                cycleTime);
+                                        }
+
+                                    }, this);
+
+
+                                    this.set('__currentVelocity',
+                                        this_velocity); // this uses velocity that is as of now
+
+                                    if (cycle_times.length > 0) {
+                                        this.set('__cycleTime', Ext.Array.mean(
+                                            cycle_times));
+                                    }
+
+                                    if (this_count > 0) {
+                                        this.set('__ratioEstimated',
+                                            count_of_estimated_artifacts /
+                                            this_count);
+                                    }
+
+                                }
+                            });
+                            deferred.resolve(new_model);
+                        }
+                    });
+                    return deferred;
+                },
+
+                // sometimes, dates are provided as beginning of day, but we 
+                // want to go to the end of the day
+                shiftToEndOfDay: function (js_date) {
+                    return Rally.util.DateTime.add(Rally.util.DateTime.add(js_date, 'day', 1),
+                        'second', -1);
+                },
+
+                isAccepted: function (state) {
+                    return (state == 'Accepted');
+                }
+            });
+            Ext.define('Rally.technicalservices.WsapiToolbox', {
+                singleton: true,
+
+                fetchDoneStates: function () {
+                    var deferred = Ext.create('Deft.Deferred');
+                    Rally.data.ModelFactory.getModel({
+                        type: 'HierarchicalRequirement',
+                        success: function (model) {
+                            var field = model.getField('ScheduleState');
+                            field.getAllowedValueStore().load({
+                                callback: function (records, operation, success) {
+                                    if (success) {
+                                        var values = [];
+                                        for (var i = records.length - 1; i >
+                                            0; i--) {
+                                            values.push(records[i].get(
+                                                'StringValue'));
+                                            if (records[i].get(
+                                                    'StringValue') ==
+                                                "Accepted") {
+                                                i = 0;
+                                            }
+                                        }
+                                        deferred.resolve(values);
+                                    } else {
+                                        deferred.reject(
+                                            'Error loading ScheduleState values for User Story:  ' +
+                                            operation.error.errors.join(
+                                                ','));
+                                    }
+                                },
+                                scope: this
+                            });
+                        },
+                        failure: function () {
+                            var error = "Could not load schedule states";
+                            deferred.reject(error);
+                        }
+                    });
+                    return deferred.promise;
+                },
+
+                fetchWsapiRecords: function (context, model_name, model_fields, filters, sort, pageSize,
+                    limit) {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    limit = limit || 'Infinity';
+                    pageSize = pageSize || 200;
+                    sort = sort || [{
+                        property: 'ObjectID',
+                        direction: 'DESC'
+                    }];
+                    filters = filters || [];
+
+                    Ext.create('Rally.data.wsapi.Store', {
+                        model: model_name,
+                        fetch: model_fields,
+                        filter: filters,
+                        sort: sort,
+                        limit: limit,
+                        pageSize: pageSize
+                    }).load({
+                        callback: function (records, operation, successful) {
+                            if (successful) {
+                                deferred.resolve(records);
+                            } else {
+                                deferred.reject(Ext.String.format(
+                                    'Error loading Store (Model = {0}, Fetch = {1}: {2}',
+                                    model_name, model_fields, operation.error.errors
+                                    .join(',')));
+                            }
+                        }
+                    });
+                    return deferred.promise;
+                },
+                fetchPreferences: function (appId) {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    if (appId) {
+                        Rally.data.PreferenceManager.load({
+                            appID: appId,
+                            success: function (prefs) {
+                                deferred.resolve(prefs);
+                            }
+                        });
+                    } else {
+                        deferred.resolve([]);
+                    }
+
+                    return deferred.promise;
+                },
+                fetchWsapiCount: function (model, query_filters) {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    var store = Ext.create('Rally.data.wsapi.Store', {
+                        model: model,
+                        fetch: ['ObjectID'],
+                        filters: query_filters,
+                        limit: 1,
+                        pageSize: 1
+                    }).load({
+                        callback: function (records, operation, success) {
+                            if (success) {
+                                deferred.resolve(operation.resultSet.totalRecords);
+                            } else {
+                                deferred.reject(Ext.String.format(
+                                    "Error getting {0} count for {1}: {2}",
+                                    model, query_filters.toString(), operation.error
+                                    .errors.join(',')));
+                            }
+                        }
+                    });
+                    return deferred;
+                }
+            });
+
+            Ext.define("rally-iteration-health", {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+                logger: new Rally.technicalservices.Logger(),
+                defaults: {
+                    margin: 10
+                },
+                config: {
+                    defaultSettings: {
+                        showDateForHalfAcceptanceRatio: true,
+                        hideTaskMovementColumn: false,
+                        useSavedRanges: false,
+                        showVelocityVariation: false,
+                        previousIterations: 3,
+                        allowGroupByLeafTeam: false,
+                        showIterationCycleTime: false,
+                        useLocalTime: true,
+                        showSayDo: false
+                    }
+                },
+                defaultNumIterations: 20,
+
+                layout: 'border',
+
+                items: [{
+                        xtype: 'container',
+                        region: 'north',
+                        items: [{
+                                xtype: 'container',
+                                itemId: 'settings_box'
+                            },
+                            {
+                                xtype: 'container',
+                                itemId: 'criteria_box',
+                                layout: {
+                                    type: 'hbox'
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        xtype: 'container',
+                        itemId: 'display_box',
+                        region: 'center',
+                        layout: {
+                            type: 'fit'
+                        }
+                    }
+                ],
+
+                launch: function () {
+                    this.logger.log("User Timezone", this.getContext().getUser().UserProfile.TimeZone);
+                    this.logger.log("Workspace Timezone", this.getContext().getWorkspace().WorkspaceConfiguration
+                        .TimeZone);
+
+                    this.healthConfig = Ext.create('Rally.technicalservices.healthConfiguration', {
+                        appId: this.getAppId(),
+                        listeners: {
+                            scope: this,
+                            rangechanged: this._refreshView,
+                            ready: this._initApp,
+                            context: this.getContext()
+                        }
+                    });
+                    this.healthConfig.updateSettings(this.getSettings());
+
+                },
+                _refreshView: function () {
+                    this.logger.log('_refreshView');
+                    if (this.down('rallygrid')) {
+                        this.down('rallygrid').getView().refresh();
+                    }
+                },
+                _initApp: function () {
+
+                    var project_oid = this.getContext().getProject().ObjectID;
+
+                    var promises = [
+                        Rally.technicalservices.WsapiToolbox.fetchWsapiCount('Project', [{
+                            property: 'Parent.ObjectID',
+                            value: project_oid
+                        }]),
+                        Rally.technicalservices.WsapiToolbox.fetchDoneStates()
+                    ];
+
+                    Deft.Promise.all(promises).then({
+                        scope: this,
+                        success: function (results) {
+                            this.down('#criteria_box').removeAll();
+
+                            this.healthConfig.doneStates = results[1];
+                            if (results[0] === 0) {
+                                this._initForLeafProject(this._fetchIterationsForLeafTeam);
+                            } else if (this.getSetting('allowGroupByLeafTeam') === true) {
+                                this._initForLeafProject(this._fetchIterationsForMultipleTeams);
+                            } else {
+                                this.down('#criteria_box').add({
+                                    xtype: 'container',
+                                    html: 'This app is designed for use at the team level.' +
+                                        '<br/>Change the context selector to a leaf team node.'
+                                });
+                            }
+                        },
+                        failure: function (msg) {
+                            Rally.ui.notify.Notifier.showError({
+                                message: msg
+                            });
+                        }
+                    });
+                },
+                _initForLeafProject: function (iterationCallbackFn) {
+                    this.down('#criteria_box').add({
+                        xtype: 'rallynumberfield',
+                        itemId: 'num-iterations',
+                        minValue: 1,
+                        maxValue: 20,
+                        fieldLabel: 'Number of Iterations',
+                        labelAlign: 'right',
+                        stateful: true,
+                        stateId: this.getContext().getScopedStateId('num-iterations'),
+                        stateEvents: ['change'],
+                        labelWidth: 150,
+                        value: this.defaultNumIterations,
+                        width: 200,
+                        listeners: {
+                            scope: this,
+                            change: iterationCallbackFn,
+                            staterestore: iterationCallbackFn
+                        }
+                    });
+
+                    var metric_store = Ext.create('Ext.data.Store', {
+                        fields: ['displayName', 'name'],
+                        data: [{
+                                "displayName": "By Points",
+                                "name": "points"
+                            },
+                            {
+                                "displayName": "By Count",
+                                "name": "count"
+                            }
+                        ]
+                    });
+
+                    this.down('#criteria_box').add({
+                        xtype: 'rallycombobox',
+                        itemId: 'cb-metric',
+                        fieldLabel: 'Metric:',
+                        labelAlign: 'right',
+                        store: metric_store,
+                        displayField: 'displayName',
+                        valueField: 'name',
+                        stateful: true,
+                        stateId: this.getContext().getScopedStateId('cb-metric'),
+                        stateEvents: ['change'],
+                        labelWidth: 75,
+                        width: 200,
+                        listeners: {
+                            scope: this,
+                            change: this._updateDisplay
+                        }
+                    });
+                },
+                _fetchIterationsForMultipleTeams: function (nbf) {
+                    var today_iso = Rally.util.DateTime.toIsoString(new Date());
+
+                    /**
+                     * if we are at the leaf node, then just use the limit and page size to limit the iterations.  If we are not, then
+                     * we should load in the iterations for each project and pass those in as a filter.
+                     */
+                    this._loadIterations({
+
+                        filters: [{
+                            property: 'EndDate',
+                            operator: '<',
+                            value: today_iso
+                        }],
+                        limit: 'Infinity',
+                        context: {
+                            project: this.getContext().getProject()._ref,
+                            projectScopeDown: true
+                        },
+                        sorters: [{
+                            property: 'EndDate',
+                            direction: 'DESC'
+                        }],
+                        groupField: 'Name',
+                        groupDir: 'ASC',
+                        getGroupString: function (record) {
+                            return record.get('Project').Name;
+                        }
+
+                    });
+                },
+
+                _fetchIterationsForLeafTeam: function (nbf) {
+
+                    var today_iso = Rally.util.DateTime.toIsoString(new Date()),
+                        num_iterations = nbf ? nbf.getValue() : this.defaultNumIterations;
+
+                    this._loadIterations({
+                        limit: num_iterations,
+                        pageSize: num_iterations,
+                        context: {
+                            project: this.getContext().getProject()._ref
+                        },
+                        sorters: [{
+                            property: 'EndDate',
+                            direction: 'DESC'
+                        }],
+                        filters: [{
+                            property: 'EndDate',
+                            operator: '<',
+                            value: today_iso
+                        }]
+                    });
+
+                },
+                _loadIterations: function (storeConfig) {
+
+                    this.down('#display_box').removeAll();
+
+                    Rally.technicalservices.ModelBuilder.build('Iteration', 'IterationHealth').then({
+                        scope: this,
+                        success: function (model) {
+                            storeConfig.model = model;
+                            storeConfig.fetch = ['ObjectID', 'Name', 'StartDate',
+                                'EndDate', 'PlannedVelocity', 'Project', 'Children'
+                            ];
+
+                            this.iterationHealthStore = Ext.create(
+                                'Rally.data.wsapi.Store', storeConfig);
+
+                            this.iterationHealthStore.load({
+                                scope: this,
+                                callback: function (records, operation, success) {
+
+                                    if (success) {
+                                        this.filterIterations(this.iterationHealthStore);
+
+                                        var records = this.iterationHealthStore
+                                            .getRecords();
+                                        if (records.length > 0) {
+                                            this._loadCalculationData(
+                                                records);
+                                            this._updateDisplay();
+                                        } else {
+                                            this.down('#display_box').removeAll();
+                                            this.down('#display_box').add({
+                                                xtype: 'container',
+                                                html: '0 iterations found for the selected scope.'
+                                            });
+                                            Rally.ui.notify.Notifier.showWarning({
+                                                message: 'No Iteration Records found for the current project scope.'
+                                            });
+                                        }
+                                    } else {
+                                        this.iterationHealthStore = null;
+                                        this.logger.log(
+                                            'IterationHealthStore failure',
+                                            operation);
+                                        Rally.ui.notify.Notifier.showError({
+                                            message: 'Error loading Iteration Health Store: ' +
+                                                operation.error.errors
+                                                .join(',')
+                                        });
+                                    }
+                                }
+                            });
+                        },
+                        failure: function (msg) {
+                            this.logger.log(msg)
+                            Rally.ui.notify.Notifier.showError({
+                                message: msg
+                            });
+                        },
+                        scope: this
+                    });
+                },
+                _loadCalculationData: function (iterationRecords) {
+
+                    var iterationOids = _.map(iterationRecords, function (rec) {
+                            return rec.get('ObjectID');
+                        }),
+                        previousIterations = this.getSetting('previousIterations');
+
+                    var me = this;
+
+                    var promises = [
+                        function () {
+                            return me._fetchIterationArtifacts(iterationOids)
+                        },
+                        function () {
+                            return me._fetchIterationCFD(iterationOids)
+                        },
+                        function () {
+                            return me._fetchStateChangesFromLookback(iterationOids);
+                        },
+                        function () {
+                            return me._fetchSayDoFromLookback(iterationRecords);
+                        }
+                    ];
+
+                    Deft.Chain.sequence(promises, me).then({
+                        success: function (results) {
+                            this._showStatus(null);
+
+                            var metric_type = this.down('#cb-metric') ? this.down(
+                                    '#cb-metric').getValue() : null,
+                                use_points = (metric_type == 'points');
+
+                            var say_do_by_iteration_oid = results[3];
+
+                            var calculator = Ext.create(
+                                'Rally.technicalservices.IterationHealthBulkCalculator', {
+                                    iterationRecords: iterationRecords,
+                                    artifactRecords: results[0],
+                                    doneStates: this.healthConfig.doneStates,
+                                    cfdRecords: results[1],
+                                    lookbackStateChanges: results[2],
+                                    showIterationCycleTime: this.getSetting(
+                                        'showIterationCycleTime')
+                                });
+
+                            _.each(this.iterationHealthStore.getRecords(), function (r) {
+                                var oid = r.get('ObjectID');
+
+                                r.set('__previousIterationVelocities',
+                                    calculator.getPreviousIterationVelocities(
+                                        r, previousIterations));
+                                r.set('__cfdRecords', calculator.getCFDByIteration(
+                                    oid));
+                                r.set('__iterationArtifacts', calculator.getArtifactsByIteration(
+                                    oid));
+
+                                r.set('__sayDoRatioData',
+                                    say_do_by_iteration_oid[oid]);
+                            }, this);
+                            this._refreshModels(iterationRecords);
+                        },
+                        failure: function (msg) {
+                            this.logger.log('Artifact and CFD failure', msg);
+                        },
+                        scope: this
+                    });
+                },
+                _refreshModels: function (records) {
+                    var metric_type = this.down('#cb-metric') ? this.down('#cb-metric').getValue() :
+                        null,
+                        use_points = (metric_type == 'points'),
+                        skip_zero = this.healthConfig.skipZeroForEstimationRatio,
+                        velocity_variation_previous_iteration_count = this.getSetting(
+                            'previousIterations');
+
+                    this.healthConfig.usePoints = use_points;
+
+                    _.each(records, function (r) {
+                        r.calculate(use_points, skip_zero,
+                            velocity_variation_previous_iteration_count, this.healthConfig
+                            .doneStates);
+                    }, this);
+
+                },
+                _getColumnCfgs: function () {
+                    var config = this.healthConfig,
+                        column_cfgs = [];
+
+                    _.each(config.displaySettings, function (col, key) {
+                        if (col.display) {
+                            var cfg = {
+                                dataIndex: key,
+                                text: col.displayName || key,
+                                scope: config,
+                                align: col.colAlign || 'right',
+                                editRenderer: false
+                            };
+
+                            cfg.listeners = {
+                                scope: this,
+                                headerclick: this._showColumnDescription
+                            };
+
+                            cfg.renderer = config.getRenderer(cfg.dataIndex);
+                            column_cfgs.push(cfg);
+                        }
+                    }, this);
+
+                    return column_cfgs;
+                },
+                _showColumnDescription: function (ct, column, evt, target_element, eOpts) {
+                    if (this.dialog) {
+                        this.dialog.destroy();
+                    }
+
+                    var tool_tip = this.healthConfig.getTooltip(column.dataIndex);
+
+                    var items = [{
+                            cls: 'ts_popover_description',
+                            xtype: 'container',
+                            html: tool_tip
+                        }],
+                        adjustor = this.getAdjustor(column);
+                    if (adjustor) {
+                        items.push(adjustor);
+                    }
+
+                    this.dialog = Ext.create('Rally.ui.dialog.Dialog', {
+                        defaults: {
+                            padding: 5,
+                            margin: 5
+                        },
+                        closable: true,
+                        draggable: true,
+                        title: column.text,
+                        items: items
+                    });
+                    this.dialog.show();
+                },
+                getAdjustor: function (column) {
+                    var config = this.healthConfig;
+
+                    if (config.displaySettings[column.dataIndex] && config.displaySettings[column.dataIndex]
+                        .range) {
+                        var ranges = config.displaySettings[column.dataIndex].range,
+                            colors = config.getRangeColors(ranges),
+                            field_label = config.getRangeLabel(ranges),
+                            values = [ranges[colors[0]] || 50, ranges[colors[1]] || 75];
+
+                        return {
+                            xtype: 'multislider',
+                            fieldLabel: field_label,
+                            width: 400,
+                            values: values,
+                            increment: 5,
+                            minValue: 0,
+                            maxValue: 100,
+                            tipText: function (thumb) {
+                                return colors[thumb.index] + ": above " + thumb.value;
+                            },
+                            listeners: {
+                                changecomplete: function (slider, new_value, thumb) {
+                                    values[thumb.index] = new_value;
+                                    ranges[colors[thumb.index]] = new_value;
+                                    config.setRanges(column.dataIndex, ranges);
+
+                                }
+                            }
+                        };
+                    }
+
+                    return null;
+                },
+                _updateDisplay: function () {
+                    var metric_type = this.down('#cb-metric') ? this.down('#cb-metric').getValue() :
+                        null,
+                        use_points = (metric_type == 'points');
+
+                    this.healthConfig.usePoints = use_points;
+
+                    if (!this.iterationHealthStore || metric_type == null) {
+                        this.logger.log("Store not yet created or metric type not selected");
+                        return;
+                    }
+
+                    this._refreshModels(this.iterationHealthStore.getRecords());
+
+                    this._displayGrid(
+                        this.iterationHealthStore,
+                        this._getColumnCfgs()
+                    );
+                },
+                _showStatus: function (message) {
+                    if (message) {
+                        Rally.ui.notify.Notifier.showStatus({
+                            message: message,
+                            showForever: true,
+                            closable: false,
+                            animateShowHide: false
+                        });
+                    } else {
+                        Rally.ui.notify.Notifier.hide();
+                    }
+                },
+                _fetchIterationArtifacts: function (oids) {
+                    this._showStatus("Loading Iteration Artifact Data")
+                    var config = {
+                        models: ['Defect', 'UserStory', 'DefectSuite', 'TestSet'],
+                        fetch: ['ObjectID', 'PlanEstimate', 'ScheduleState', 'Iteration',
+                            'AcceptedDate', 'InProgressDate'
+                        ],
+                        limit: 'Infinity'
+                    };
+                    return this._fetchChunkedDataByOid("Iteration.ObjectID", oids,
+                        'Rally.data.wsapi.artifact.Store', config);
+                },
+                _fetchIterationCFD: function (oids) {
+                    this._showStatus("Loading Iteration Cumulative Flow Data");
+                    var config = {
+                        model: 'IterationCumulativeFlowData',
+                        fetch: ['CardCount', 'CardEstimateTotal', 'CreationDate',
+                            'IterationObjectID', 'TaskEstimateTotal', 'CardToDoTotal',
+                            'CardState'
+                        ],
+                        sorters: [{
+                            property: 'CreationDate',
+                            direction: 'ASC'
+                        }],
+                        limit: 'Infinity'
+                    };
+                    return this._fetchChunkedDataByOid("IterationObjectID", oids,
+                        'Rally.data.wsapi.Store', config);
+                },
+
+                _fetchSayDoFromLookback: function (iterationRecords) {
+                    var me = this,
+                        deferred = Ext.create('Deft.Deferred');
+
+                    if (!this.getSetting('showSayDo') || iterationRecords.length === 0) {
+                        return [];
+                    }
+
+                    this._showStatus("Loading Iteration Say/Do Data")
+
+                    var promises = [];
+                    Ext.Array.each(iterationRecords, function (iteration) {
+                        var start = new Date(iteration.get("StartDate").setHours(23, 59, 59));
+                        var end = iteration.get("EndDate");
+                        var oid = iteration.get("ObjectID");
+
+                        promises.push(function () {
+                            return me._fetchSayDoForIteration(oid, start, end)
+                        });
+                    });
+
+                    Deft.Chain.sequence(promises, me).then({
+                        success: function (results) {
+                            var say_do_by_iteration_oid = {};
+                            Ext.Array.each(results, function (result) {
+                                Ext.Object.merge(say_do_by_iteration_oid,
+                                    result);
+                            });
+
+                            deferred.resolve(say_do_by_iteration_oid);
+                        },
+                        failure: function (msg) {
+                            deferred.reject(msg);
+                        }
+                    });
+                    return deferred.promise;
+                },
+
+                _fetchSayDoForIteration: function (oid, start, end) {
+                    var me = this,
+                        deferred = Ext.create('Deft.Deferred');
+
+                    var promises = [
+                        function () {
+                            return me._fetchSayDoForStartOfIteration(oid, start, end);
+                        },
+                        function () {
+                            return me._fetchSayDoForEndOfIteration(oid, start, end);
+                        }
+                    ];
+
+                    Deft.Chain.sequence(promises, me).then({
+                        success: function (results) {
+                            var start_items = results[0];
+                            var end_items = results[1];
+
+                            var start_items_by_formatted_id = {};
+                            var count_start = 0;
+                            var size_start = 0;
+
+                            Ext.Array.each(start_items, function (item) {
+                                var fid = item.get('FormattedID');
+                                var pe = item.get('PlanEstimate') || 0;
+
+                                start_items_by_formatted_id[fid] = item;
+                                count_start = count_start + 1;
+                                size_start = size_start + pe;
+                            });
+
+                            var analysis = {
+                                items: [],
+                                count_start: count_start,
+                                size_start: size_start,
+                                count_end: 0,
+                                size_end: 0,
+                                count_ratio: -1,
+                                size_ratio: -1
+                            };
+
+                            Ext.Array.each(end_items, function (item) {
+                                var fid = item.get('FormattedID');
+                                var start_item = start_items_by_formatted_id[
+                                    fid];
+
+                                if (Ext.isEmpty(start_item)) {
+                                    console.log("Not in the start: ", fid);
+                                } else if (Ext.isEmpty(item.get('AcceptedDate'))) {
+                                    console.log("Not Accepted: ", fid);
+                                } else {
+                                    start_item.set('__end_plan_estimate', pe);
+                                    var pe = start_item.get('PlanEstimate') ||
+                                        0;
+
+                                    analysis.count_end = analysis.count_end + 1;
+                                    analysis.size_end = analysis.size_end + pe;
+                                }
+                            });
+
+                            analysis.items = Ext.Array.map(Ext.Object.getValues(
+                                start_items_by_formatted_id), function (item) {
+                                return item;
+                            });
+
+
+                            if (analysis.count_start > 0) {
+                                analysis.count_ratio = analysis.count_end / analysis.count_start;
+                            }
+                            if (analysis.size_start > 0) {
+                                analysis.size_ratio = analysis.size_end / analysis.size_start;
+                            }
+
+                            var x = {};
+                            x[oid] = analysis;
+                            deferred.resolve(x);
+                        },
+                        failure: function (msg) {
+                            deferred.reject(msg);
+                        }
+                    });
+
+                    return deferred.promise;
+                },
+
+                _fetchSayDoForStartOfIteration: function (oid, start, end) {
+                    var me = this;
+
+                    var date_filters = Rally.data.lookback.QueryFilter.or([{
+                        property: '__At',
+                        value: Rally.util.DateTime.toIsoString(start)
+                    }]);
+
+                    var iteration_filter = Rally.data.lookback.QueryFilter.and([{
+                        property: 'Iteration',
+                        value: oid
+                    }]);
+
+                    var config = {
+                        fetch: ['FormattedID', 'Name', 'AcceptedDate', 'PlanEstimate'],
+                        filters: date_filters.and(iteration_filter)
+                    };
+
+                    var lookback_store_class = "Rally.data.lookback.SnapshotStore";
+
+                    return this._fetchData(lookback_store_class, config);
+                },
+
+                _fetchSayDoForEndOfIteration: function (oid, start, end) {
+                    var me = this;
+
+                    var date_filters = Rally.data.lookback.QueryFilter.or([{
+                        property: '__At',
+                        value: Rally.util.DateTime.toIsoString(end)
+                    }]);
+
+                    var iteration_filter = Rally.data.lookback.QueryFilter.and([{
+                        property: 'Iteration',
+                        value: oid
+                    }]);
+
+                    var config = {
+                        fetch: ['FormattedID', 'Name', 'AcceptedDate', 'PlanEstimate'],
+                        filters: date_filters.and(iteration_filter)
+                    };
+
+                    var lookback_store_class = "Rally.data.lookback.SnapshotStore";
+
+                    return this._fetchData(lookback_store_class, config);
+                },
+
+                _fetchStateChangesFromLookback: function (iteration_oids) {
+                    if (!this._isNotOnPrem()) {
+                        return [];
+                    }
+
+                    var config = {
+                        fetch: ['Name', 'ScheduleState', '_PreviousValues',
+                            '_PreviousValues.ScheduleState', 'Iteration'
+                        ],
+                        filters: [{
+                                property: 'Iteration',
+                                operator: 'in',
+                                value: iteration_oids
+                            },
+                            {
+                                property: '_PreviousValues.ScheduleState',
+                                operator: 'exists',
+                                value: true
+                            }
+                        ],
+                        hydrate: ['ScheduleState', '_PreviousValues.ScheduleState', 'Iteration']
+                    };
+                    var lookback_store_class = "Rally.data.lookback.SnapshotStore";
+
+                    // TODO: decide what to do if the story was moved to in progress in some other iteration
+
+                    return this._fetchData(lookback_store_class, config);
+                },
+
+                _fetchChunkedDataByOid: function (property, oids, storeType, config) {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    var chunkSize = 25,
+                        idx = -1,
+                        chunks = [];
+
+                    if (oids.length < chunkSize) {
+                        chunks[0] = _.map(oids, function (oid) {
+                            return {
+                                property: property,
+                                value: oid
+                            };
+                        });
+                    } else {
+                        for (var i = 0; i < oids.length; i++) {
+                            if (i % chunkSize === 0) {
+                                idx++;
+                                chunks.push([]);
+                            }
+                            chunks[idx].push({
+                                property: property,
+                                value: oids[i]
+                            });
+                        }
+                    }
+
+                    var promises = [],
+                        me = this;
+                    _.each(chunks, function (chunk) {
+                        config.filters = Rally.data.wsapi.Filter.or(chunk);
+
+                        var newConfig = Ext.clone(config);
+                        promises.push(function () {
+                            return me._fetchData(storeType, newConfig);
+                        });
+                    }, this);
+
+                    Deft.Chain.parallel(promises, this).then({
+                        success: function (results) {
+                            this._showStatus(null);
+                            deferred.resolve(_.flatten(results));
+                        },
+                        failure: function (msg) {
+                            deferred.reject(msg);
+                        },
+                        scope: this
+                    });
+
+                    return deferred;
+                },
+                _fetchData: function (storeType, config) {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    Ext.create(storeType, config).load({
+                        callback: function (records, operation) {
+
+                            if (operation.wasSuccessful()) {
+                                deferred.resolve(records);
+                            } else {
+                                deferred.resolve('Error fetching data: ' + operation.error
+                                    .errors.join(','))
+                            }
+                        },
+                        scope: this
+                    });
+                    return deferred;
+                },
+                _displayGrid: function (store, column_cfgs) {
+                    this.down('#display_box').removeAll();
+
+                    var gridConfig = {
+                        xtype: 'rallygrid',
+                        store: store,
+                        sortableColumns: false,
+                        showPagingToolbar: false,
+                        enableBulkEdit: false,
+                        showRowActionsColumn: false,
+                        enableEditing: false,
+                        columnCfgs: column_cfgs
+                    };
+
+                    if (store.groupField) {
+                        gridConfig.features = [{
+                            ftype: 'groupingsummary',
+                            groupHeaderTpl: '{name} ({rows.length})',
+                            startCollapsed: true
+                        }];
+                    }
+
+                    this.down('#display_box').add(gridConfig);
+                },
+                filterIterations: function (store) {
+                    var nbf = this.down('#num-iterations'),
+                        num_iterations = nbf ? nbf.getValue() : this.defaultNumIterations;
+
+
+                    //Get relevant Iteration Records
+                    var projectIterationHash = Rally.technicalservices.IterationHealthBulkCalculator
+                        .buildSortedIterationByProjectHash(store.getRecords()),
+                        iterationOids = [];
+
+                    _.each(projectIterationHash, function (recs, project) {
+                        iterationOids = iterationOids.concat(_.map(recs, function (r) {
+                            return r.ObjectID;
+                        }).slice(0, num_iterations - 1));
+                    });
+
+                    store.filterBy(function (item) {
+                        return Ext.Array.contains(iterationOids, item.get('ObjectID'));
+                    });
+                },
+                getOptions: function () {
+                    return [{
+                        text: 'About...',
+                        handler: this._launchInfo,
+                        scope: this
+                    }];
+                },
+                _launchInfo: function () {
+                    if (this.about_dialog) {
+                        this.about_dialog.destroy();
+                    }
+                    this.about_dialog = Ext.create('Rally.technicalservices.InfoLink', {});
+                },
+
+                isExternal: function () {
+                    return typeof (this.getAppId()) == 'undefined';
+                },
+                //onSettingsUpdate:  Override
+                onSettingsUpdate: function (settings) {
+                    Ext.apply(this, settings);
+                    this.launch();
+                },
+
+                getSettingsFields: function () {
+
+                    var settings = [],
+                        display_half_accepted = false,
+                        half_accepted_ratio_name = '__halfAcceptedRatio',
+                        task_churn_name = "Task Churn",
+                        velocity_variance_name = "Velocity Variance";
+
+                    if (this.healthConfig) {
+                        display_half_accepted = this.healthConfig.displaySettings.__halfAcceptedRatio
+                            .display;
+                        half_accepted_ratio_name = this.healthConfig.displaySettings.__halfAcceptedRatio
+                            .displayName;
+                        task_churn_name = this.healthConfig.displaySettings.__taskChurn.displayName;
+                        velocity_variance_name = this.healthConfig.displaySettings.__velocityVariance
+                            .displayName;
+                    }
+
+                    var check_box_margins = '0 0 10 20';
+
+                    if (display_half_accepted) {
+                        settings.push({
+                            name: 'showDateForHalfAcceptanceRatio',
+                            xtype: 'rallycheckboxfield',
+                            boxLabelAlign: 'after',
+                            fieldLabel: '',
+                            margin: check_box_margins,
+                            boxLabel: 'Show date for ' + half_accepted_ratio_name
+                        });
+                    }
+                    settings.push({
+                        name: 'hideTaskMovementColumn',
+                        xtype: 'rallycheckboxfield',
+                        boxLabelAlign: 'after',
+                        fieldLabel: '',
+                        margin: check_box_margins,
+                        boxLabel: 'Hide ' + task_churn_name
+                    });
+                    settings.push({
+                        name: 'showVelocityVariation',
+                        xtype: 'rallycheckboxfield',
+                        boxLabelAlign: 'after',
+                        fieldLabel: '',
+                        margin: check_box_margins,
+                        boxLabel: 'Show ' + velocity_variance_name
+                    });
+                    /* requires lookback */
+                    if (this._isNotOnPrem() && this._isNotSandbox()) {
+                        settings.push({
+                            name: 'showSayDo',
+                            xtype: 'rallycheckboxfield',
+                            boxLabelAlign: 'after',
+                            fieldLabel: '',
+                            margin: check_box_margins,
+                            boxLabel: 'Show Say:Do Ratio'
+                        });
+                    }
+
+                    var cycle_time_choices = [{
+                            Name: 'No',
+                            Value: false
+                        },
+                        {
+                            Name: 'In Progress to Accepted',
+                            Value: 'inprogress-to-accepted'
+                        }
+                    ];
+
+                    /* requires lookback */
+                    if (this._isNotOnPrem() && this._isNotSandbox()) {
+                        cycle_time_choices.push({
+                            Name: 'In Progress to Completed',
+                            Value: 'inprogress-to-completed'
+                        });
+                    }
+
+                    settings.push({
+                        name: 'showIterationCycleTime',
+                        xtype: 'rallycombobox',
+                        fieldLabel: 'Show Cycle Time',
+                        labelWidth: 100,
+                        labelAlign: 'left',
+                        minWidth: 200,
+                        margin: check_box_margins,
+                        displayField: 'Name',
+                        valueField: 'Value',
+                        store: Ext.create('Rally.data.custom.Store', {
+                            data: cycle_time_choices
+                        }),
+                        readyEvent: 'ready'
+                    });
+
+                    settings.push({
+                        name: 'allowGroupByLeafTeam',
+                        xtype: 'rallycheckboxfield',
+                        boxLabelAlign: 'after',
+                        fieldLabel: '',
+                        margin: check_box_margins,
+                        boxLabel: 'Allow Group by Leaf Team'
+                    });
+
+                    settings.push({
+                        name: 'useLocalTime',
+                        xtype: 'rallycheckboxfield',
+                        boxLabelAlign: 'after',
+                        fieldLabel: '',
+                        margin: check_box_margins,
+                        boxLabel: 'Show Local Date'
+                    });
+
+                    return settings;
+                },
+                //showSettings:  Override
+                showSettings: function (options) {
+                    this._appSettings = Ext.create('Rally.app.AppSettings', Ext.apply({
+                        fields: this.getSettingsFields(),
+                        settings: this.getSettings(),
+                        defaultSettings: this.getDefaultSettings(),
+                        context: this.getContext(),
+                        settingsScope: this.settingsScope,
+                        autoScroll: true
+                    }, options));
+
+                    this._appSettings.on('cancel', this._hideSettings, this);
+                    this._appSettings.on('save', this._onSettingsSaved, this);
+                    if (this.isExternal()) {
+                        if (this.down('#settings_box').getComponent(this._appSettings.id) ==
+                            undefined) {
+                            this.down('#settings_box').add(this._appSettings);
+                        }
+                    } else {
+                        this.hide();
+                        this.up().add(this._appSettings);
+                    }
+                    return this._appSettings;
+                },
+
+                _isNotOnPrem: function () {
+                    return (this.getContext().getGlobalContext().context &&
+                        this.getContext().getGlobalContext().context.stack &&
+                        !this.getContext().getGlobalContext().context.stack.isOnPrem);
+                },
+
+                _isNotSandbox: function () {
+                    return !/https:\/\/sandbox/.test(window.location.href);
+                },
+
+                _onSettingsSaved: function (settings) {
+                    Ext.apply(this.settings, settings);
+                    this._hideSettings();
+                    this.healthConfig.updateSettings(settings);
+                    this.onSettingsUpdate(settings);
+                }
+            });
+
+            Ext.define('Rally.technicalservices.IterationHealthBulkCalculator', {
+
+                /**
+                 * configuration data sent into
+                 **/
+                artifactRecords: undefined,
+                doneStates: undefined,
+                iterationRecords: undefined,
+                cfdRecords: undefined,
+
+                artifactsByIterationHash: undefined,
+                cfdByIterationHash: undefined,
+                sayDoByIterationOID: {},
+
+                // for getting cycle time other than from in progress to accepted
+                lookbackStateChanges: [],
+                showIterationCycleTime: false,
+
+                constructor: function (config) {
+                    this.artifactRecords = config.artifactRecords;
+                    this.doneStates = config.doneStates || ["Accepted"];
+                    this.iterationRecords = config.iterationRecords;
+                    this.cfdRecords = config.cfdRecords;
+                    this.lookbackStateChanges = config.lookbackStateChanges || [];
+                    this.showIterationCycleTime = config.showIterationCycleTime;
+
+                    this._setStateChangesInArtifacts(this.lookbackStateChanges);
+                    this._setCycleTimes(this.artifactRecords, this.showIterationCycleTime);
+
+                },
+
+                _setCycleTimes: function (records, showIterationCycleTime) {
+                    if (!showIterationCycleTime) {
+                        return;
+                    }
+
+                    Ext.Array.each(records, function (artifact) {
+                        var start_date = artifact.get('InProgressDate'),
+                            end_date = artifact.get('AcceptedDate');
+                        if (showIterationCycleTime == "inprogress-to-completed") {
+                            start_date = artifact.get("__In-Progress_first");
+                            end_date = artifact.get("__Completed_last");
+                            if (Ext.isString(start_date)) {
+                                start_date = Rally.util.DateTime.fromIsoString(start_date);
+                            }
+                            if (Ext.isString(end_date)) {
+                                end_date = Rally.util.DateTime.fromIsoString(end_date);
+                            }
+                        }
+
+                        var iteration = Ext.clone(artifact.get('Iteration'));
+                        var delta = -2;
+
+                        if (!Ext.isEmpty(start_date) && !Ext.isEmpty(end_date)) {
+                            delta = Rally.technicalservices.util.Health.daysBetween(
+                                end_date, start_date, true);
+                        }
+
+                        iteration.__cycleTime = delta;
+
+                        artifact.set('Iteration', iteration);
+                    });
+                },
+
+                _setStateChangesInArtifacts: function (lookbackStateChanges) {
+                    if (lookbackStateChanges.length == []) {
+                        return;
+                    }
+
+                    var artifacts_by_oid = {};
+                    Ext.Array.each(this.artifactRecords, function (record) {
+                        var oid = record.get('ObjectID');
+                        artifacts_by_oid[oid] = record;
+                    });
+
+                    Ext.Array.each(lookbackStateChanges, function (snapshot) {
+                        var oid = snapshot.get('ObjectID');
+                        if (Ext.isEmpty(artifacts_by_oid[oid])) {
+                            return;
+                        }
+                        var artifact = artifacts_by_oid[oid];
+                        var old_state = snapshot.get('_PreviousValues.ScheduleState');
+                        var new_state = snapshot.get('ScheduleState');
+
+                        this._setTransition(artifact, new_state, old_state, snapshot.get(
+                            '_ValidFrom'));
+
+                    }, this);
+                },
+
+                _setTransition: function (artifact, new_state, old_state, change_date) {
+                    var state_array = Ext.Array.push(["Defined", "In-Progress", "Completed"], this.doneStates);
+
+                    var in_index = Ext.Array.indexOf(state_array, new_state);
+                    if (in_index == -1) {
+                        return;
+                    }
+                    var out_index = Ext.Array.indexOf(state_array, old_state);
+
+                    var states_of_interest = [new_state];
+
+                    // in situation where we came from the left and skipped a state
+                    // want to set interim states
+                    if (out_index < in_index) {
+                        states_of_interest = Ext.Array.slice(state_array, out_index + 1, in_index +
+                            1);
+                    }
+
+                    //console.log('interesting states:', states_of_interest, new_state);
+
+                    Ext.Array.each(states_of_interest, function (state) {
+                        var first_transition_name = "__" + state + "_first";
+                        var last_transition_name = "__" + state + "_last";
+
+                        if (Ext.isEmpty(artifact.get(first_transition_name))) {
+                            artifact.set(first_transition_name, change_date);
+                        }
+                        //            
+                        artifact.set(last_transition_name, change_date);
+                    });
+                },
+
+                getVelocityByIterationHash: function () {
+                    if (!this.velocityByIterationHash) {
+                        var iterationHash = this.getArtifactsByIterationHash(),
+                            doneStates = this.doneStates,
+                            velocityHash = {};
+
+                        _.each(iterationHash, function (records, iteration) {
+                            var velocity = 0;
+                            _.each(records, function (r) {
+                                if (Ext.Array.contains(doneStates, r.ScheduleState)) {
+                                    velocity += r.PlanEstimate || 0;
+                                }
+                            });
+                            velocityHash[iteration] = velocity;
+                        });
+                        this.velocityByIterationHash = velocityHash;
+                    }
+
+                    return this.velocityByIterationHash;
+                },
+                getPreviousIterationVelocities: function (iterationRecord, numIterations) {
+                    //Organize iteration by project and then sort in descending order from latest start date
+                    var project = iterationRecord.get('Project').ObjectID,
+                        projectIterations = _.pluck(this.getSortedIterationsByProjectHash()[project],
+                            'ObjectID');
+
+                    var idx = _.indexOf(projectIterations, iterationRecord.get('ObjectID'));
+                    if ((idx + numIterations) < projectIterations.length) {
+                        var velocityIterations = projectIterations.slice(idx + 1, idx +
+                            numIterations + 1);
+                        return _.map(velocityIterations, function (i) {
+                            return this.getVelocityByIterationHash()[i] || 0;
+                        }, this);
+                    }
+                    return [];
+                },
+                getSortedIterationsByProjectHash: function () {
+                    if (!this.sortedIterationsByProjectHash) {
+                        this.sortedIterationsByProject = Rally.technicalservices.IterationHealthBulkCalculator
+                            .buildSortedIterationByProjectHash(this.iterationRecords);
+                    }
+                    return this.sortedIterationsByProject;
+
+                },
+                getCFDByIteration: function (iterationOid) {
+                    return this.getCFDByIterationHash()[iterationOid] || null;
+                },
+
+                getCFDByIterationHash: function () {
+                    if (!this.cfdByIterationHash) {
+                        this.cfdByIterationHash = Rally.technicalservices.IterationHealthBulkCalculator
+                            ._getHashByOid(this.cfdRecords, 'IterationObjectID');
+                    }
+                    return this.cfdByIterationHash;
+                },
+                getArtifactsByIterationHash: function () {
+                    if (!this.artifactsByIterationHash) {
+                        this.artifactsByIterationHash = Rally.technicalservices.IterationHealthBulkCalculator
+                            ._getHashByOid(this.artifactRecords, "Iteration", "ObjectID");
+                    }
+                    return this.artifactsByIterationHash;
+                },
+                getArtifactsByIteration: function (iterationOid) {
+                    return this.getArtifactsByIterationHash()[iterationOid] || null;
+                },
+
+                statics: {
+                    buildSortedIterationByProjectHash: function (iterationRecords) {
+                        var iterationsByProjectHash = Rally.technicalservices.IterationHealthBulkCalculator
+                            ._getHashByOid(iterationRecords, "Project", "ObjectID"),
+                            sortedIterationsByProjectHash = {};
+
+                        _.each(iterationsByProjectHash, function (iterations, project) {
+                            sortedIterationsByProjectHash[project] = _.sortBy(iterations,
+                                function (i) {
+                                    return -Date.parse(i.StartDate);
+                                });
+                        });
+                        return sortedIterationsByProjectHash;
+                    },
+                    _getHashByOid: function (records, oidFieldName, oidAttributeName) {
+                        var hash = {};
+                        for (var i = 0; i < records.length; i++) {
+                            var oid = records[i].get(oidFieldName) || records[i][oidFieldName];
+                            if (oidAttributeName) {
+                                oid = oid[oidAttributeName];
+                            }
+                            if (!hash[oid]) {
+                                hash[oid] = [];
+                            }
+                            hash[oid].push(records[i].getData());
+                        }
+                        return hash;
+                    }
+                }
+            });
+
+
+            Rally.launchApp('rally-iteration-health', {
+                name: 'Rally Iteration Health'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+        .app {}
+
+        .tsinfolink {
+            position: absolute;
+            right: 0px;
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            text-align: center;
+            color: white;
+            background: #C0C0C0;
+            border-style: solid;
+            border-width: 1px;
+            margin-top: 25px;
+            margin-right: 5px;
+            cursor: pointer;
+        }
+
+        .ts_popover_description {
+            background-color: white;
+            padding: 3px;
+            width: 600px;
+        }
+
+        .ts_popover_description h1 {
+            margin: 3px 0px;
+            font-size: 14px;
+        }
+
+        .icon-plus {
+            font-size: 14px;
+            color: #888;
+            float: right;
+        }
+
+        .icon-minus {
+            font-size: 14px;
+            color: #888;
+            float: right;
+        }
+
+        .x-border-layout-ct {
+            background-color: #fff;
+        }
+    </style>
+
+</head>
+
+<body></body>
+
+</html>

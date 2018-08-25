@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Dependency Table (Designed for Sustainment)</title>
+
+    <script type="text/javascript" src="/apps/2.0rc3/sdk-debug.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+    <script type="text/javascript" charset="utf8" src="//cdn.datatables.net/1.10.5/js/jquery.dataTables.js"></script>
+    <script type="text/javascript" src="//cdn.datatables.net/tabletools/2.2.3/js/dataTables.tableTools.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="//cdn.datatables.net/1.10.5/css/jquery.dataTables.css">
+    <link rel="stylesheet" type="text/css" href="//cdn.datatables.net/tabletools/2.2.3/css/dataTables.tableTools.min.css">
+    <script type="text/javascript">
+        Rally.onReady(function () {
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+                //logger: new Rally.technicalservices.Logger(),
+                //settingsScope: 'app',
+                /*onTimeboxScopeChange: function(newTimeboxScope) {
+                                                                                this.callParent(arguments);
+ 
+                                                                                if (this.pleaseWait){this.pleaseWait.hide();}
+                                                                                if (this.down('#topSummary')){
+                                                                                                this.down('#topSummary').destroy();
+                                                                                }
+                                                                                if (this.down('#summaryData')){
+                                                                                                this.down('#summaryData').destroy();
+                                                                                }
+                                                                                if (this.down('#summaryData2')){
+                                                                                                this.down('#summaryData2').destroy();
+                                                                                }
+                                                                                this.pleaseWait = new Ext.LoadMask(this.down('#display_box'), {msg:"Please wait..."});
+                                                                                this.pleaseWait.show();
+                                                                               
+                                                                                //Get page iteration setting
+                                                                                var iterationScope = this.getContext().getTimeboxScope();
+                                                                                var name;
+                                                                                if(iterationScope) {
+                                                                                                var record = iterationScope.getRecord();
+                                                                                                name = record.get('Name');
+                                                                                                startDate = record.get('StartDate');
+                                                                                }
+                                                                                this._getUserStories(name,startDate);
+                                                                },*/
+                items: [{
+                        xtype: 'container',
+                        itemId: 'settings_box'
+                    },
+                    {
+                        xtype: 'container',
+                        itemId: 'display_box',
+                        height: 200
+                    }
+                ],
+                launch: function () {
+                    window.console && console.info('test');
+                    this.down('#settings_box').add({
+                        xtype: 'rallybutton',
+                        itemId: 'button1',
+                        margin: '20 0 20 0',
+                        text: 'Run',
+                        scope: this,
+                        handler: function () {
+                            if (this.pleaseWait) {
+                                this.pleaseWait.hide();
+                            }
+                            if (this.down('#summaryData')) {
+                                this.down('#summaryData').destroy();
+                            }
+
+                            this.pleaseWait = new Ext.LoadMask(this.down('#display_box'), {
+                                msg: "Please wait..."
+                            });
+                            this.pleaseWait.show();
+
+                            //Get page iteration setting
+                            var iterationScope = this.getContext().getTimeboxScope();
+                            var name, startDate;
+                            if (iterationScope) {
+                                var record = iterationScope.getRecord();
+                                if (record !== null) {
+                                    name = record.get('Name');
+                                    startDate = record.get('StartDate');
+                                } else {
+                                    name = null;
+                                    startDate = null;
+                                }
+                            }
+                            this._getUserStories(name);
+                        }
+                    });
+                },
+
+                _getUserStories: function (name) {
+
+                    if (name === null) {
+                        var sprintFilter2 = Ext.create('Rally.data.wsapi.Filter', {
+                            property: 'Iteration.Name',
+                            operator: '=',
+                            value: null
+                        });
+                    } else {
+                        var sprintFilter2 = Ext.create('Rally.data.wsapi.Filter', {
+                            property: 'Iteration.Name',
+                            operator: '=',
+                            value: name
+                        });
+                    }
+
+                    //var combinedFilter = projectFilter.and(blockedFilter.or(sprintFilter));
+                    //var combinedFilter = projectFilter.and(sprintFilter);
+                    window.console && console.log(sprintFilter2.toString());
+                    var currentProjectOID = this.getContext().getProject().ObjectID;
+                    var currentScopeUp = this.getContext().getProjectScopeUp();
+                    var currentScopeDown = this.getContext().getProjectScopeDown();
+
+                    Ext.create('Rally.data.wsapi.Store', {
+                        model: 'User Story',
+                        listeners: {
+                            load: function (store, data, success) {
+                                var deliveryStoryArray = [];
+                                if (data.length === 0) {
+                                    this._printTable(deliveryStoryArray);
+                                } else {
+                                    var breaker;
+                                    Ext.Array.each(data, function (record) {
+                                        //Determine if valid for deliveryStoryArray
+                                        if (record.raw.Predecessors.Count > 0) {
+                                            deliveryStoryArray.push(record.raw);
+                                            deliveryStoryArray[
+                                                    deliveryStoryArray.length -
+                                                    1].FormattedID =
+                                                '<a href="https://rally1.rallydev.com/#/detail/userstory/' +
+                                                record.raw.ObjectID +
+                                                '" target="_blank">' + record.raw
+                                                .FormattedID + '</a>';
+                                        }
+                                    });
+                                    if (deliveryStoryArray.length === 0) {
+                                        this._printTable(deliveryStoryArray);
+                                    } else {
+                                        this._getPredecessorData(deliveryStoryArray, 0);
+                                    }
+                                }
+                            },
+                            scope: this
+                        },
+                        limit: Infinity,
+                        //pageSize: 20,
+                        autoLoad: true,
+                        fetch: ['Name', 'ObjectID', 'FormattedID', 'Iteration',
+                            'PlanEstimate', 'ScheduleState', 'Predecessors', 'Project',
+                            'c_PlanCompleteSustainArch', 'c_PlanStartSustainArch',
+                            'c_CodeName'
+                        ],
+                        filters: sprintFilter2,
+                        context: {
+                            project: '/project/' + currentProjectOID,
+                            projectScopeUp: currentScopeUp,
+                            projectScopeDown: currentScopeDown
+                        }
+                    });
+                },
+
+                _getPredecessorData: function (deliveryStoryArray, counter) {
+                    //Set the new variables for Predecessor data
+                    deliveryStoryArray[counter].Predecessor = [];
+
+                    this.pleaseWait.msg = "Loading First Predecessor Data " + Math.ceil((counter +
+                        1) / deliveryStoryArray.length * 100) + '%';
+                    this.pleaseWait.hide();
+                    this.pleaseWait.show();
+
+                    $.ajax({
+                        type: "GET",
+                        url: deliveryStoryArray[counter].Predecessors._ref +
+                            '?pageSize=200',
+                        dataType: "json",
+                        context: this,
+                        complete: function (data, response) {
+                            //window.console && console.log(data.responseJSON);
+                            for (var a = 0; a < data.responseJSON.QueryResult.Results.length; a++) {
+                                var planComplete = data.responseJSON.QueryResult.Results[
+                                        a].c_PlanCompleteSustainArch === null ? null :
+                                    Rally.util.DateTime.fromIsoString(data.responseJSON
+                                        .QueryResult.Results[a].c_PlanCompleteSustainArch
+                                    );
+                                var planStart = data.responseJSON.QueryResult.Results[a]
+                                    .c_PlanStartSustainArch === null ? null : Rally.util
+                                    .DateTime.fromIsoString(data.responseJSON.QueryResult
+                                        .Results[a].c_PlanStartSustainArch);
+                                deliveryStoryArray[counter].Predecessor.push({
+                                    FormattedID: '<a href="https://rally1.rallydev.com/#/detail/userstory/' +
+                                        data.responseJSON.QueryResult.Results[a]
+                                        .ObjectID + '" target="_blank">' + data
+                                        .responseJSON.QueryResult.Results[a].FormattedID +
+                                        '</a>',
+                                    Name: data.responseJSON.QueryResult.Results[
+                                        a].Name,
+                                    PlanEstimate: data.responseJSON.QueryResult
+                                        .Results[a].PlanEstimate,
+                                    Project: data.responseJSON.QueryResult.Results[
+                                            a].Project === null ? null : data.responseJSON
+                                        .QueryResult.Results[a].Project._refObjectName,
+                                    ScheduleState: data.responseJSON.QueryResult
+                                        .Results[a].Blocked === true ?
+                                        '<b><class="red">' + data.responseJSON.QueryResult
+                                        .Results[a].ScheduleState + '</b>' : data
+                                        .responseJSON.QueryResult.Results[a].ScheduleState,
+                                    PlanComplete: data.responseJSON.QueryResult
+                                        .Results[a].c_PlanCompleteSustainArch ===
+                                        null ? null : data.responseJSON.QueryResult
+                                        .Results[a].c_PlanCompleteSustainArch.substring(
+                                            0, 10),
+                                    PlanStart: data.responseJSON.QueryResult.Results[
+                                            a].c_PlanStartSustainArch === null ?
+                                        null : data.responseJSON.QueryResult.Results[
+                                            a].c_PlanStartSustainArch.substring(
+                                            0, 10),
+                                    SecondaryPredecessorCount: data.responseJSON
+                                        .QueryResult.Results[a].Predecessors.Count,
+                                    SecondaryPredecessorRef: data.responseJSON.QueryResult
+                                        .Results[a].Predecessors._ref,
+                                    SecondaryPredecessors: []
+                                });
+                            }
+                            this._whatDoNext(deliveryStoryArray, counter);
+                        },
+                        /*fail: function(data,textStatus,errorThrown){
+                                        alert('Failure! '+errorThrown)
+                        }*/
+                    });
+                },
+
+                _whatDoNext: function (deliveryStoryArray, counter) {
+                    if ((counter + 1) >= deliveryStoryArray.length) {
+                        this._getSecondaryPredecessors(deliveryStoryArray, 0, 0);
+                        //this._printTable(deliveryStoryArray);
+                    } else {
+                        counter++;
+                        this._getPredecessorData(deliveryStoryArray, counter);
+                    }
+                },
+
+                _getSecondaryPredecessors: function (deliveryStoryArray, counter1, counter2) {
+                    this.pleaseWait.msg = "Loading Second Predecessor Data " + Math.ceil((counter1 +
+                        1) / deliveryStoryArray.length * 100) + '%';
+                    this.pleaseWait.hide();
+                    this.pleaseWait.show();
+
+                    if (deliveryStoryArray[counter1].Predecessor.length > 0 && deliveryStoryArray[
+                            counter1].Predecessor[counter2].SecondaryPredecessorCount > 0) {
+                        $.ajax({
+                            type: "GET",
+                            url: deliveryStoryArray[counter1].Predecessor[counter2].SecondaryPredecessorRef +
+                                '?pageSize=200',
+                            dataType: "json",
+                            context: this,
+                            complete: function (data, response) {
+                                //window.console && console.log(data.responseJSON);
+                                for (var a = 0; a < data.responseJSON.QueryResult.Results
+                                    .length; a++) {
+                                    var planComplete = data.responseJSON.QueryResult.Results[
+                                            a].c_PlanCompleteSustainArch === null ?
+                                        null : Rally.util.DateTime.fromIsoString(data.responseJSON
+                                            .QueryResult.Results[a].c_PlanCompleteSustainArch
+                                        );
+                                    var planStart = data.responseJSON.QueryResult.Results[
+                                            a].c_PlanStartSustainArch === null ? null :
+                                        Rally.util.DateTime.fromIsoString(data.responseJSON
+                                            .QueryResult.Results[a].c_PlanStartSustainArch
+                                        );
+                                    deliveryStoryArray[counter1].Predecessor[counter2].SecondaryPredecessors
+                                        .push({
+                                            FormattedID: '<a href="https://rally1.rallydev.com/#/detail/userstory/' +
+                                                data.responseJSON.QueryResult.Results[
+                                                    a].ObjectID +
+                                                '" target="_blank">' + data.responseJSON
+                                                .QueryResult.Results[a].FormattedID +
+                                                '</a>',
+                                            Name: data.responseJSON.QueryResult.Results[
+                                                a].Name,
+                                            PlanEstimate: data.responseJSON.QueryResult
+                                                .Results[a].PlanEstimate,
+                                            Project: data.responseJSON.QueryResult.Results[
+                                                    a].Project === null ? null : data
+                                                .responseJSON.QueryResult.Results[a]
+                                                .Project._refObjectName,
+                                            ScheduleState: data.responseJSON.QueryResult
+                                                .Results[a].Blocked === true ?
+                                                '<b><class="red">' + data.responseJSON
+                                                .QueryResult.Results[a].ScheduleState +
+                                                '</b>' : data.responseJSON.QueryResult
+                                                .Results[a].ScheduleState,
+                                            PlanComplete: data.responseJSON.QueryResult
+                                                .Results[a].c_PlanCompleteSustainArch ===
+                                                null ? null : data.responseJSON.QueryResult
+                                                .Results[a].c_PlanCompleteSustainArch
+                                                .substring(0, 10),
+                                            PlanStart: data.responseJSON.QueryResult
+                                                .Results[a].c_PlanStartSustainArch ===
+                                                null ? null : data.responseJSON.QueryResult
+                                                .Results[a].c_PlanStartSustainArch.substring(
+                                                    0, 10)
+                                        });
+                                }
+                                this._whatDoNextTwo(deliveryStoryArray, counter1,
+                                    counter2);
+                            },
+                            /*fail: function(data,textStatus,errorThrown){
+                                            alert('Failure! '+errorThrown)
+                            }*/
+                        });
+                    } else {
+                        this._whatDoNextTwo(deliveryStoryArray, counter1, counter2);
+                    }
+                },
+
+                _whatDoNextTwo: function (deliveryStoryArray, counter1, counter2) {
+                    if ((counter2 + 1) >= deliveryStoryArray[counter1].Predecessor.length && (
+                            counter1 + 1) >= deliveryStoryArray.length) {
+                        //All done with both counters (Predecessors and Second Predecessors)
+                        this._printTable(deliveryStoryArray);
+                    } else if ((counter2 + 1) >= deliveryStoryArray[counter1].Predecessor.length) {
+                        //All done with Second Predecessors; go get secondaries for next First Predecessor
+                        counter1++;
+                        counter2 = 0;
+                        this._getSecondaryPredecessors(deliveryStoryArray, counter1, counter2);
+                    } else {
+                        //Not done with anything yet - increment Second Predecessor
+                        counter2++;
+                        this._getSecondaryPredecessors(deliveryStoryArray, counter1, counter2);
+                    }
+                },
+
+                _printTable: function (deliveryStoryArray) {
+                    //Before we print the table, rearrange the data so that the DataTables functionality picks up the data
+                    var finalArray = [];
+                    for (var a = 0; a < deliveryStoryArray.length; a++) {
+                        for (var b = 0; b < deliveryStoryArray[a].Predecessor.length; b++) {
+                            if (deliveryStoryArray[a].Predecessor[b].SecondaryPredecessors.length >
+                                0) {
+                                for (var c = 0; c < deliveryStoryArray[a].Predecessor[b].SecondaryPredecessors
+                                    .length; c++) {
+                                    finalArray.push(new Object({
+                                        Functional_FormattedID: deliveryStoryArray[a].FormattedID,
+                                        Functional_Name: deliveryStoryArray[a].Name,
+                                        Functional_Project: deliveryStoryArray[a].Project
+                                            ._refObjectName,
+                                        Functional_CodeName: deliveryStoryArray[a].c_CodeName,
+                                        Functional_PlanEstimate: deliveryStoryArray[a].PlanEstimate,
+                                        Pred_FormattedID: deliveryStoryArray[a].Predecessor[
+                                            b].FormattedID,
+                                        Pred_Name: deliveryStoryArray[a].Predecessor[b]
+                                            .Name,
+                                        Pred_Project: deliveryStoryArray[a].Predecessor[
+                                            b].Project,
+                                        Pred_ScheduleState: deliveryStoryArray[a].Predecessor[
+                                            b].ScheduleState,
+                                        Pred_PlanEstimate: deliveryStoryArray[a].Predecessor[
+                                            b].PlanEstimate,
+                                        Pred_PlanStart: deliveryStoryArray[a].Predecessor[
+                                            b].PlanStart,
+                                        Pred_PlanComplete: deliveryStoryArray[a].Predecessor[
+                                            b].PlanComplete,
+                                        SecondPred_FormattedID: deliveryStoryArray[a].Predecessor[
+                                            b].SecondaryPredecessors[c].FormattedID,
+                                        SecondPred_Name: deliveryStoryArray[a].Predecessor[
+                                            b].SecondaryPredecessors[c].Name,
+                                        SecondPred_Project: deliveryStoryArray[a].Predecessor[
+                                            b].SecondaryPredecessors[c].Project,
+                                        SecondPred_ScheduleState: deliveryStoryArray[a]
+                                            .Predecessor[b].SecondaryPredecessors[c].ScheduleState,
+                                        SecondPred_PlanEstimate: deliveryStoryArray[a].Predecessor[
+                                            b].SecondaryPredecessors[c].PlanEstimate,
+                                        SecondPred_PlanStart: deliveryStoryArray[a].Predecessor[
+                                            b].SecondaryPredecessors[c].PlanStart,
+                                        SecondPred_PlanComplete: deliveryStoryArray[a].Predecessor[
+                                            b].SecondaryPredecessors[c].PlanComplete
+                                    }));
+                                }
+                            } else {
+                                finalArray.push(new Object({
+                                    Functional_FormattedID: deliveryStoryArray[a].FormattedID,
+                                    Functional_Name: deliveryStoryArray[a].Name,
+                                    Functional_Project: deliveryStoryArray[a].Project._refObjectName,
+                                    Functional_CodeName: deliveryStoryArray[a].c_CodeName,
+                                    Functional_PlanEstimate: deliveryStoryArray[a].PlanEstimate,
+                                    Pred_FormattedID: deliveryStoryArray[a].Predecessor[
+                                        b].FormattedID,
+                                    Pred_Name: deliveryStoryArray[a].Predecessor[b].Name,
+                                    Pred_Project: deliveryStoryArray[a].Predecessor[b].Project,
+                                    Pred_ScheduleState: deliveryStoryArray[a].Predecessor[
+                                        b].ScheduleState,
+                                    Pred_PlanEstimate: deliveryStoryArray[a].Predecessor[
+                                        b].PlanEstimate,
+                                    Pred_PlanStart: deliveryStoryArray[a].Predecessor[b]
+                                        .PlanStart,
+                                    Pred_PlanComplete: deliveryStoryArray[a].Predecessor[
+                                        b].PlanComplete,
+                                    SecondPred_FormattedID: '-----',
+                                    SecondPred_Name: 'No Secondary Predecessors',
+                                    SecondPred_Project: '-----',
+                                    SecondPred_ScheduleState: '-----',
+                                    SecondPred_PlanEstimate: '-----',
+                                    SecondPred_PlanStart: '-----',
+                                    SecondPred_PlanComplete: '-----'
+                                }));
+                            }
+                        }
+                    }
+                    var html =
+                        '<table id="sustainmentDependenciesList" class="display" cellspacing="0" width="100%">' +
+                        '<thead>' +
+                        '<tr>' +
+                        '<th colspan="5" class="green">Functional Story</th>' +
+                        '<th colspan="7" class="blue">Predecessor Dependency Story</th>' +
+                        '<th colspan="7" class="orange">Second-Level Predecessor Dependency Story</th>' +
+                        '</tr>' +
+                        '<tr>' +
+                        '<th class="green">ID</th>' +
+                        '<th class="green">Name</th>' +
+                        '<th class="green">Team</th>' +
+                        '<th class="green">Project</th>' +
+                        '<th class="green">Plan Estimate</th>' +
+                        '<th class="blue">ID</th>' +
+                        '<th class="blue">Name</th>' +
+                        '<th class="blue">Team</th>' +
+                        '<th class="blue">Schedule State</th>' +
+                        '<th class="blue">Plan Estimate</th>' +
+                        '<th class="blue">Plan Start</th>' +
+                        '<th class="blue">Plan Complete</th>' +
+                        '<th class="orange">ID</th>' +
+                        '<th class="orange">Name</th>' +
+                        '<th class="orange">Team</th>' +
+                        '<th class="orange">Schedule State</th>' +
+                        '<th class="orange">Plan Estimate</th>' +
+                        '<th class="orange">Plan Start</th>' +
+                        '<th class="orange">Plan Complete</th>' +
+                        '</tr>' +
+                        '</thead>' +
+                        '</table>';
+
+                    this.down('#display_box').add({
+                        xtype: 'panel',
+                        itemId: 'summaryData',
+                        height: 500,
+                        html: html
+                    });
+
+                    $('#sustainmentDependenciesList').DataTable({
+                        data: finalArray,
+                        dom: 'T<"clear">lfrtip',
+                        "scrollY": "300px",
+                        "scrollCollapse": true,
+                        //"paging": false,
+                        "scrollX": "100%",
+                        tableTools: {
+                            "sSwfPath": "//cdn.datatables.net/tabletools/2.2.2/swf/copy_csv_xls_pdf.swf"
+                        },
+                        columns: [{
+                                data: 'Functional_FormattedID',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Functional_Name',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Functional_Project',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Functional_CodeName',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Functional_PlanEstimate',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Pred_FormattedID',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Pred_Name',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Pred_Project',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Pred_ScheduleState',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Pred_PlanEstimate',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Pred_PlanStart',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'Pred_PlanComplete',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'SecondPred_FormattedID',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'SecondPred_Name',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'SecondPred_Project',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'SecondPred_ScheduleState',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'SecondPred_PlanEstimate',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'SecondPred_PlanStart',
+                                className: "dt-body-center"
+                            },
+                            {
+                                data: 'SecondPred_PlanComplete',
+                                className: "dt-body-center"
+                            }
+                        ]
+                    });
+
+                    this.pleaseWait.hide();
+                },
+
+                roundNumber: function (number, decimal_points) {
+                    if (!decimal_points) return Math.round(number);
+                    if (number == 0) {
+                        var decimals = "";
+                        for (var i = 0; i < decimal_points; i++) decimals += "0";
+                        return "0." + decimals;
+                    }
+
+                    var exponent = Math.pow(10, decimal_points);
+                    var num = Math.round((number * exponent)).toString();
+                    return num.slice(0, -1 * decimal_points) + "." + num.slice(-1 * decimal_points)
+                }
+
+            });
+            Rally.launchApp('CustomApp', {
+                name: 'Raw Dependencies List - Sustainment Delivery Teams'
+            });
+        });
+    </script>
+    <style type="text/css">
+        .blue {
+            background-color: #3DB8B8 !important;
+        }
+
+        .green {
+            background-color: #3DB87A !important;
+        }
+
+        .orange {
+            background-color: #F57A00 !important;
+        }
+
+        .red {
+            color: #00ff00 !important;
+        }
+    </style>
+</head>
+
+<body>
+</body>
+
+</html>

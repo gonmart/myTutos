@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Iteration List App</title>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+            Ext.define('IterationListApp', {
+                extend: 'Rally.ui.grid.Grid',
+                alias: 'widget.iterationlistapp',
+
+                config: {
+                    columnCfgs: [
+
+                        'CumulativeFlowCallOuts'
+                    ],
+                    enableEditing: false,
+                    showPagingToolbar: false
+                },
+
+                initComponent: function () {
+                    var timeboxRecord = this.context.getTimeboxScope().getRecord();
+
+                    Ext.apply(this.config, {
+                        storeConfig: {
+                            model: 'Iteration',
+                            filters: [{
+                                property: 'Name',
+                                value: timeboxRecord.get('Name')
+                            }, {
+                                property: 'StartDate',
+                                value: timeboxRecord.get('StartDate')
+                            }, {
+                                property: 'EndDate',
+                                value: timeboxRecord.get('EndDate')
+                            }],
+                            context: {
+                                projectScopeDown: false,
+                                projectScopeUp: false
+                            }
+                        }
+                    });
+
+                    Ext.merge(this, this.config);
+                    this.callParent(arguments);
+                }
+            });
+
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.TimeboxScopedApp',
+                componentCls: 'app',
+
+                scopeType: 'iteration',
+
+                storeConfig: {
+                    fetch: ['ObjectID', 'Name', 'StartDate', 'EndDate', 'Project', 'Children']
+                },
+
+                onScopeChange: function () {
+                    this.remove('iterationListApp');
+
+                    this.add({
+                        xtype: 'iterationlistapp',
+                        itemId: 'iterationListApp',
+                        context: this.getContext()
+                    });
+                }
+            });
+
+
+            Rally.launchApp('CustomApp', {
+                name: "Iteration List App",
+                parentRepos: ""
+            });
+
+        });
+    </script>
+
+
+
+    <style type="text/css">
+        .app {
+            /* Add app styles here */
+        }
+    </style>
+</head>
+
+<body>
+</body>
+
+</html>

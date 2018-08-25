@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<!-- Subscriber app to Sprint-based Cycle Time App -->
+<html>
+
+<head>
+    <title>Sprint-based Cycle Time - Grid</title>
+
+    <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.6/css/bootstrap.min.css"
+    />
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.11/css/dataTables.bootstrap.min.css" />
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/buttons/1.1.2/css/buttons.bootstrap.min.css" />
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+    <script type="text/javascript" src="https://code.jquery.com/jquery-2.2.0.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.6/js/bootstrap.min.js"></script>
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jszip/2.5.0/jszip.min.js"></script>
+    <script type="text/javascript" src="https://cdn.rawgit.com/bpampuch/pdfmake/0.1.18/build/pdfmake.min.js"></script>
+    <script type="text/javascript" src="https://cdn.rawgit.com/bpampuch/pdfmake/0.1.18/build/vfs_fonts.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/1.10.11/js/jquery.dataTables.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/1.10.11/js/dataTables.bootstrap.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.1.2/js/dataTables.buttons.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.1.2/js/buttons.bootstrap.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.1.2/js/buttons.html5.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.1.2/js/buttons.print.min.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.App',
+
+                launch: function () {
+                    this.subscribe(this, 'drawGrid', this._drawGrid, this);
+                },
+
+                _drawGrid: function (data) {
+                    this._records = data;
+
+                    var gridStore = Ext.create('Rally.data.custom.Store', {
+                        data: _.pluck(this._records, 'raw')
+                    });
+
+                    this._export && this._export.destroy();
+                    this._export = Ext.create('Ext.container.Container', {
+                        html: '<table id="dt-table" style="display:none;"></table>',
+                        listeners: {
+                            boxready: this._createDTExport,
+                            scope: this
+                        }
+                    });
+                    this.add(this._export)
+
+                    this._grid && this._grid.destroy();
+                    this._grid = Ext.create('Rally.ui.grid.Grid', {
+                        itemId: 'storyGrid',
+                        store: gridStore,
+                        columnCfgs: [{
+                            text: "ID",
+                            dataIndex: "FormattedID",
+                            xtype: "templatecolumn",
+                            tpl: Ext.create(
+                                "Rally.ui.renderer.template.FormattedIDTemplate"
+                            )
+                        }, {
+                            text: "Name",
+                            dataIndex: "Name",
+                            flex: 1
+                        }, {
+                            text: "PlanEstimate",
+                            dataIndex: "PlanEstimate",
+                        }, {
+                            text: "Project",
+                            dataIndex: "Project",
+                            xtype: "templatecolumn",
+                            tpl: Ext.create(
+                                "Rally.ui.renderer.template.ObjectTemplate", {
+                                    fieldName: 'Project'
+                                })
+                        }, {
+                            text: "Iteration",
+                            dataIndex: "Iteration",
+                            xtype: "templatecolumn",
+                            tpl: Ext.create(
+                                "Rally.ui.renderer.template.ObjectTemplate", {
+                                    fieldName: 'Iteration'
+                                })
+                        }, {
+                            text: "Days",
+                            dataIndex: "cycleTimeDuration",
+                            flex: 1,
+                            renderer: function (value) {
+                                return +(Math.round((value / 86400000) + 'e+2') +
+                                    'e-2');
+                            }
+                        }],
+                        dockedItems: [{
+                            xtype: 'toolbar',
+                            dock: 'top',
+                            ui: 'footer',
+                            padding: '4 10',
+                            overflowX: 'hidden',
+                            items: ['->', this._export]
+                        }],
+                        showRowActionsColumn: false
+                    });
+
+                    this.add(this._grid);
+                    this._grid.reconfigure(gridStore);
+                },
+
+                _createDTExport: function () {
+                    this._dt = $('#dt-table').DataTable({
+                        destroy: true,
+                        data: _.pluck(this._records, 'raw'),
+                        dom: 'B',
+                        buttons: [{
+                            extend: 'excel',
+                            text: '',
+                            title: 'export',
+                            className: 'icon-export'
+                        }],
+                        columns: [{
+                                title: 'ID',
+                                data: 'FormattedID',
+                                defaultContent: ''
+                            },
+                            {
+                                title: 'Name',
+                                data: 'Name',
+                                defaultContent: ''
+                            },
+                            {
+                                title: 'Plan Est',
+                                data: 'PlanEstimate',
+                                defaultContent: ''
+                            },
+                            {
+                                title: 'Project',
+                                data: 'Project.Name',
+                                defaultContent: ''
+                            },
+                            {
+                                title: 'Iteration',
+                                data: 'Iteration.Name',
+                                defaultContent: ''
+                            },
+                            {
+                                title: 'Days',
+                                data: 'cycleTimeDuration',
+                                render: function (data) {
+                                    return +(Math.round((data / 86400000) + 'e+2') +
+                                        'e-2');
+                                },
+                                defaultContent: ''
+                            },
+                        ]
+                    });
+                }
+            });
+
+            Rally.launchApp('CustomApp');
+        });
+    </script>
+
+    <style type="text/css">
+    </style>
+</head>
+
+<body></body>
+
+</html>

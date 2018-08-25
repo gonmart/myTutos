@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<!-- Uses Global project scoping. For specific projects use the project picker. Hold down the Shift key when selecting a project to select or deselect all child projects. -->
+<html>
+
+<head>
+    <title>Sprint-based Cycle Time</title>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.App',
+                items: [{
+                        xtype: 'container',
+                        itemId: 'settings_box',
+                        layout: 'hbox'
+                    },
+                    {
+                        xtype: 'container',
+                        itemId: 'display_box'
+                    }
+                ],
+
+                config: {
+                    defaultSettings: {
+                        Iterations: '5'
+                    }
+                },
+
+                launch: function () {
+                    this._wait = new Ext.LoadMask(this, {});
+
+                    //get current timebox
+                    Ext.create('Rally.data.wsapi.Store', {
+                        model: 'Iteration',
+                        autoLoad: true,
+                        filters: [{
+                            property: 'StartDate',
+                            operator: '<=',
+                            value: 'today',
+                        }, {
+                            property: 'EndDate',
+                            operator: '>=',
+                            value: 'today'
+                        }, {
+                            property: 'EndDate',
+                            operator: '<=',
+                            value: 'today+28' //do not get timebox that is over 4 weeks long
+                        }],
+                        listeners: {
+                            load: function (store, records) {
+                                this._timeboxScope = store.first();
+                            },
+                            scope: this
+                        }
+                    });
+
+                    this.down('#settings_box').add([{
+                        xtype: 'rallybutton',
+                        margin: '20 0 20 0',
+                        text: 'Run',
+                        scope: this,
+                        handler: function () {
+                            if (!this._timeboxScope) {
+                                return;
+                            }
+                            this.down('#display_box').removeAll();
+                            this._getCurrentlyAcceptedArtifacts();
+                        }
+                    }, Ext.create('HierarchyAwareMultiObjectProjectPicker', {
+                        itemId: 'project-combobox',
+                        margin: '20 0 20 20',
+                        fieldLabel: 'Project Select'
+                    }), {
+                        xtype: 'rallytextfield',
+                        inputType: 'number',
+                        fieldLabel: 'Iterations',
+                        labelAlign: 'right',
+                        value: 5,
+                        margin: '20 0 20 20'
+                    }, {
+                        xtype: 'rallycheckboxfield',
+                        fieldLabel: 'Include Defects',
+                        labelAlign: 'right',
+                        value: false,
+                        margin: '20 0 20 20',
+                    }]);
+                },
+
+                _getProjectFilter: function () {
+                    var projects = this.down('#project-combobox').getValue();
+
+                    return Rally.data.wsapi.Filter.or(_.map(projects, function (project) {
+                        return {
+                            property: 'Project.Name',
+                            value: project.get('Name')
+                        };
+                    }));
+                },
+
+                _getCurrentlyAcceptedArtifacts: function () {
+                    this._wait.msg = 'Loading...';
+                    this._wait.show();
+
+                    var start = this._timeboxScope.get('StartDate');
+                    var end = this._timeboxScope.get('EndDate');
+                    var days = Math.round(Ext.Date.getElapsed(start, end) / (1000 * 60 * 60 * 24));
+
+                    var context = this.getContext().getDataContext();
+                    var models = ['userstory'];
+                    var filters = Rally.data.wsapi.Filter.and([{
+                            property: 'ScheduleState',
+                            operator: '=',
+                            value: 'Accepted'
+                        },
+                        {
+                            property: 'Iteration.StartDate',
+                            operator: '<=',
+                            value: 'today'
+                        },
+                        {
+                            property: 'Iteration.StartDate',
+                            operator: '>=',
+                            value: 'today-' + (this.down('rallytextfield').getValue() > 1 ?
+                                this.down('rallytextfield').getValue() : 2) * days
+                        },
+                        {
+                            property: 'Name',
+                            operator: '!contains',
+                            value: 'dev lead'
+                        },
+                        {
+                            property: 'Feature.FormattedID',
+                            operator: '!=',
+                            value: 'F7988' //automation tracking stories
+                        }
+
+                    ]);
+                    var projectFilter = this._getProjectFilter();
+
+                    if (this.down('rallycheckboxfield').getValue()) {
+                        models.push('defect');
+                    }
+
+                    if (projectFilter) {
+                        context = {
+                            workspace: this.getContext().getWorkspaceRef(),
+                            project: null
+                        };
+                        filters = filters.and(projectFilter);
+                    }
+
+                    Ext.create('Rally.data.wsapi.artifact.Store', {
+                        models: models,
+                        limit: Infinity,
+                        autoLoad: true,
+                        fetch: ['Name', 'ObjectID', 'FormattedID', 'PlanEstimate',
+                            'ScheduleState', 'AcceptedDate', 'CreationDate',
+                            'InProgressDate', 'Project', 'Iteration'
+                        ],
+                        filters: filters,
+                        context: context,
+                        listeners: {
+                            load: this._onArtifactsLoad,
+                            scope: this
+                        }
+                    });
+                },
+
+                _onArtifactsLoad: function (store, data) {
+                    this._records = data;
+
+                    var iterationList = {};
+                    _.each(data, function (record) {
+                        var iteration = record.raw.Iteration.ObjectID;
+                        var name = record.raw.Iteration.Name;
+                        var project = record.raw.Project.Name;
+                        iterationList[iteration] = iterationList[iteration] || {
+                            project: project,
+                            name: name,
+                            records: []
+                        };
+                        iterationList[iteration].records.push(record.raw)
+                    });
+
+                    var i = 1;
+                    var len = Object.keys(iterationList).length;
+                    var lookbackFn = _.map(iterationList, function (iteration) {
+                        return function () {
+                            this._wait.msg = 'Loading...' + (+Math.round((i / len) +
+                                'e+2')) + '%';
+                            this._wait.hide();
+                            this._wait.show();
+                            i++;
+                            return this._getLookbackData(iteration);
+                        };
+                    }, this);
+
+                    Deft.Chain.sequence(lookbackFn, this).then({
+                        success: this._onLookbackLoad,
+                        scope: this
+                    });
+                },
+
+                _getLookbackData: function (iteration) {
+                    var deferred = Ext.create('Deft.Deferred');
+                    var oidArray = _.pluck(iteration.records, 'ObjectID');
+
+                    Ext.create('Rally.data.lookback.SnapshotStore', {
+                        autoLoad: true,
+                        pageSize: 5000,
+                        fetch: ['ObjectID', 'ScheduleState',
+                            '_PreviousValues.ScheduleState'
+                        ],
+                        hydrate: ['ScheduleState', '_PreviousValues.ScheduleState'],
+                        sort: {
+                            _ValidFrom: 1
+                        },
+                        context: this.getContext().getDataContext(),
+                        limit: Infinity,
+                        find: {
+                            ObjectID: {
+                                '$in': oidArray
+                            },
+                            '_PreviousValues.ScheduleState': {
+                                $exists: true
+                            }
+                        },
+                        listeners: {
+                            load: function (store, data) {
+                                _.each(data, function (item) {
+                                    var wsRecord = _.find(iteration.records,
+                                        function (record) {
+                                            return item.raw.ObjectID ===
+                                                record.ObjectID;
+                                        });
+                                    wsRecord._lbRecords = wsRecord._lbRecords ||
+                                        [];
+                                    wsRecord._lbRecords.push(item.raw);
+                                });
+                                deferred.resolve(iteration);
+                            },
+                            scope: this
+                        }
+                    });
+                    return deferred.promise;
+                },
+
+                _onLookbackLoad: function (results) {
+                    _.each(results, function (iteration) {
+                        _.each(iteration.records, function (record) {
+                            var inProgressDate;
+                            var acceptedDate;
+                            _.each(record._lbRecords, function (artifact) {
+                                if (artifact.ScheduleState === 'Defined') {
+                                    inProgressDate = null;
+                                }
+                                if (!inProgressDate && artifact.ScheduleState !==
+                                    'Defined') {
+                                    inProgressDate = artifact._ValidFrom;
+                                }
+                                if (artifact.ScheduleState === 'Accepted') {
+                                    acceptedDate = artifact._ValidFrom;
+                                }
+                            });
+                            if (!inProgressDate || !acceptedDate) {
+                                return;
+                            }
+                            record.cycleTimeDuration = Ext.Date.getElapsed(Ext.Date
+                                .parse(inProgressDate, 'c'), Ext.Date.parse(
+                                    acceptedDate, 'c'));;
+                        });
+                    });
+
+                    var data = [];
+                    _.each(results, function (iteration) {
+                        _.each(iteration.records, function (record) {
+                            data.push({
+                                iteration: record.Iteration.Name,
+                                all: 'All',
+                                project: record.Project.Name,
+                                points: 'Points ' + Math.floor(record.PlanEstimate),
+                                cycleTimeDuration: record.cycleTimeDuration
+                            });
+                        });
+                    });
+
+                    this._pivotDataForChart(data);
+                    this.publish('drawGrid', this._records);
+                },
+
+                _pivotDataForChart: function (data) {
+                    this._wait.hide();
+
+                    function getGrouped(field) {
+                        var dataObj = {};
+                        _.each(data, function (item) {
+                            var category = item.iteration;
+                            var group = item[field];
+                            dataObj[category] = dataObj[category] || {};
+                            dataObj[category][group] = dataObj[category][group] || {
+                                duration: 0,
+                                count: 0
+                            };
+                            if (item.cycleTimeDuration) {
+                                dataObj[category][group].duration += item.cycleTimeDuration;
+                                dataObj[category][group].count++;
+                            }
+                        });
+                        return dataObj;
+                    }
+
+                    var iterationList = _.chain(data).pluck('iteration').uniq().value().sort();
+                    var projectList = _.chain(data).pluck('project').uniq().value().sort();
+                    var pointsList = _.chain(data).pluck('points').uniq().value().sort();
+
+                    this._drawChart(iterationList, ['All'], getGrouped('all'), true);
+                    this._drawChart(iterationList, projectList, getGrouped('project'), false);
+                    this._drawChart(iterationList, pointsList, getGrouped('points'), true);
+                },
+
+                _drawChart: function (categories, seriesList, data, visible) {
+                    var series = _.map(seriesList, function (name) {
+                        return {
+                            name: name,
+                            data: [],
+                            visible: visible
+                        }
+                    });
+
+                    _.each(seriesList, function (serie, i) {
+                        _.each(categories, function (category, j) {
+                            var group = data[category][serie];
+                            var cycleTime = group && group.duration / group.count /
+                                86400000;
+                            series[i].data.push(cycleTime || null)
+                        });
+                    });
+
+                    this.down('#display_box').add({
+                        xtype: 'rallychart',
+                        chartData: {
+                            categories: categories,
+                            series: series
+                        },
+                        chartConfig: this._getChartConfig()
+                    });
+                },
+
+                _getChartConfig: function () {
+                    return {
+                        plotOptions: {
+                            spline: {
+                                dataLabels: {
+                                    enabled: true,
+                                    formatter: function () {
+                                        return +(Math.round(this.y + 'e+2') + 'e-2')
+                                    }
+                                }
+                            }
+                        },
+                        chart: {
+                            zoomType: 'xy',
+                            type: 'spline'
+                        },
+                        title: {
+                            text: 'Cycle Time: ' + (this.down('#project-combobox').getValue().length >
+                                0 ? 'Mixed' : this.getContext().getProject().Name)
+                        },
+                        xAxis: {
+                            tickmarkPlacement: 'on',
+                            tickInterval: 1,
+                            type: 'linear',
+                            title: {
+                                text: 'Sprint'
+                            }
+                        },
+                        yAxis: [{
+                            min: 0,
+                            title: {
+                                text: 'Average Cycle Time (days)'
+                            }
+                        }]
+                    };
+                }
+            });
+
+            (function () {
+                var Ext = window.Ext4 || window.Ext;
+
+                /**
+                 * @private
+                 *
+                 * A multi-object-picker that allows for selecting child projects via shift-click.
+                 */
+                Ext.define('HierarchyAwareMultiObjectProjectPicker', {
+                    extend: 'Rally.ui.picker.MultiObjectPicker',
+                    componentCls: 'rui-hierarchyawareproject-picker',
+
+                    config: {
+                        maintainScrollPosition: true,
+                        modelType: 'Project',
+                        autoExpand: true,
+                        storeConfig: {
+                            limit: Infinity,
+                            fetch: ['Name', 'Parent', 'Iterations'],
+                            compact: false,
+                            listeners: {
+                                load: {
+                                    fn: function (store, items) {
+                                        this.collapse();
+                                        this._createHierarchy(store);
+                                        this._componentReady();
+                                        this.setValue(this.selectedProjects);
+                                    },
+                                    single: true
+                                }
+                            }
+                        },
+                        width: 300,
+                        listeners: {
+                            select: function (self, selectedRecord, value, event) {
+                                this._doWithMaintainedScrollPosition(function () {
+                                    this._addChildren(selectedRecord, event);
+
+                                    this.selectedProjects = _.map(this.getValue(),
+                                        function (record) {
+                                            return record.get('_ref');
+                                        });
+                                    this.saveState();
+                                });
+                            },
+                            deselect: function (self, selectedRecord, value, event) {
+                                this._doWithMaintainedScrollPosition(function () {
+                                    this._removeChildren(selectedRecord, event);
+
+                                    this.selectedProjects = _.map(this.getValue(),
+                                        function (record) {
+                                            return record.get('_ref');
+                                        });
+                                    this.saveState();
+                                });
+                            },
+                            expand: function (field, event) {
+                                var picker = field.getPicker();
+                                if (picker) {
+                                    // make sure picker is under the rally footer (z-index: 200)
+                                    picker.setZIndex(0);
+                                }
+                            }
+                        },
+                        stateful: true,
+                        stateId: 'hierarchy-aware'
+                    },
+
+                    constructor: function (config) {
+                        this.config.storeConfig.listeners.load.scope = this;
+                        this.mergeConfig(config);
+                        this.callParent(arguments);
+                    },
+
+                    focusPlaceholderText: Ext.emptyFn,
+
+                    _addChildren: function (parentRecord, event) {
+                        if (event.shiftKey) {
+                            var children = this._getChildren(parentRecord, []);
+                            if (children.length) {
+                                this.setValue(Ext.Array.merge(this.getValue(), children));
+                            }
+                        }
+                    },
+
+                    _removeChildren: function (parentRecord, event) {
+                        if (event.shiftKey) {
+                            var children = this._getChildren(parentRecord, []);
+                            if (children.length) {
+                                this.setValue(Ext.Array.difference(this.getValue(), children));
+                            }
+                        }
+                    },
+
+                    _getChildren: function (parentRecord, children) {
+                        if (this.hierarchy[parentRecord.data.ObjectID]) {
+                            _.each(this.hierarchy[parentRecord.data.ObjectID], function (record) {
+                                children.push(record);
+                                this._getChildren(record, children);
+                            }, this);
+                        }
+                        return children;
+                    },
+
+                    _createHierarchy: function (store) {
+                        var parentOid;
+                        this.hierarchy = {};
+
+                        _.each(store.getRecords(), function (record) {
+                            parentOid = record.data.Parent && record.data.Parent._ref &&
+                                Rally.util.Ref.getOidFromRef(record.data.Parent._ref);
+                            if (parentOid) {
+                                if (!this.hierarchy[parentOid]) {
+                                    this.hierarchy[parentOid] = [];
+                                }
+                                this.hierarchy[parentOid].push(record);
+                            }
+                        }, this);
+                    },
+
+                    findInStore: function (value) {
+                        return this.store ? this.store.findRecordEvenIfFiltered(this.selectionKey,
+                            value) : null;
+                    },
+
+                    _componentReady: function () {
+                        if (Rally.BrowserTest) {
+                            Rally.BrowserTest.publishComponentReady(this);
+                        }
+                    },
+
+                    getState: function () {
+                        return {
+                            selectedProjects: this.selectedProjects
+                        };
+                    }
+                });
+            })();
+
+            Rally.launchApp('CustomApp');
+        });
+    </script>
+
+    <style type="text/css">
+    </style>
+</head>
+
+<body></body>
+
+</html>
