@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Backlog Health Chart v2</title>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js">
+        //v2 - Adding the Settings to customize the chart (Gonzalo Martinez)
+        //v1 - Original Version (Kenichiro Nicks)
+    </script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+
+                config: {
+                    defaultSettings: {
+                        target1: 35,
+                        target2: 70,
+                        maxSize: 100,
+                        label1: 'Next Sprint',
+                        label2: 'Goal'
+                    }
+                },
+
+                launch: function () {
+                    this._wait = new Ext.LoadMask(this, {});
+                    this._wait.show();
+
+                    Deft.Chain.pipeline([
+                        this._queryUnscheduledStories
+                    ], this).then({
+                        success: this._onStoriesLoad,
+                        scope: this
+                    });
+                },
+                //This is for the Settings
+                getSettingsFields: function () {
+                    return [{
+                        xtype: "container",
+                        margin: "10 70 10 50",
+                        html: '<div class="variable-label">Instructions</div><span style="color:#999999;">Set the target velocity for target lines in the chart.</span><br>'
+                    }, {
+                        xtype: 'rallynumberfield',
+                        fieldLabel: 'Next Sprint',
+                        name: 'target1',
+                        labelAlign: 'right',
+                        labelWidth: 100,
+                        minValue: 1,
+                        maxValue: 1000
+                    }, {
+                        xtype: 'rallynumberfield',
+                        fieldLabel: 'Goal',
+                        name: 'target2',
+                        labelAlign: 'right',
+                        labelWidth: 100,
+                        minValue: 1,
+                        maxValue: 1000
+                    }, {
+                        xtype: "container",
+                        margin: "10 70 10 50",
+                        html: '<div class="variable-label">Chart Settings</div><span style="color:#999999;">Using the following fields you can customize the chart.</span><br>'
+                    }, {
+                        xtype: 'rallynumberfield',
+                        fieldLabel: 'Chart Max Size',
+                        name: 'maxSize',
+                        labelAlign: 'right',
+                        labelWidth: 100,
+                        minValue: 50,
+                        maxValue: 1000
+                    }, {
+                        xtype: 'textfield',
+                        fieldLabel: 'Label 1',
+                        name: 'label1',
+                        labelAlign: 'right',
+                        labelWidth: 100
+                    }, {
+                        xtype: 'textfield',
+                        fieldLabel: 'Label 2',
+                        name: 'label2',
+                        labelAlign: 'right',
+                        labelWidth: 100
+                    }];
+                },
+                //This is for the Settings
+                onSettingsUpdate: function (settings) {
+                    Ext.apply(this, settings);
+                    this.launch();
+                },
+
+                _onStoriesLoad: function (store) {
+                    this._wait.hide();
+
+                    var groups = store.getGroups();
+                    var groupData = {};
+
+                    var categoryProperties = {
+                        'DoR Complete': {
+                            c_GroomingStatus: 'DoR Complete',
+                            Blocked: false
+                        },
+                        'DoR Blocked': {
+                            c_GroomingStatus: 'DoR Complete',
+                            Blocked: true
+                        },
+                        'Grooming Complete': {
+                            c_GroomingStatus: 'Grooming Complete'
+                        }
+                    };
+
+                    _.each(groups, function (group) {
+                        var list = _.pluck(group.children, 'raw');
+
+                        groupData[group.name] = {};
+                        _.each(categoryProperties, function (properties, category) {
+                            groupData[group.name][category] = _.chain(list)
+                                .where(properties)
+                                .reduce(function (sum, rec) {
+                                    return sum + rec.PlanEstimate;
+                                }, 0)
+                                .value();
+                        });
+                    });
+
+                    this._groupData = groupData;
+                    this._addChart();
+                },
+
+                _queryUnscheduledStories: function () {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    Ext.create('Rally.data.wsapi.Store', {
+                        model: 'userstory',
+                        context: this.getContext().getDataContext(),
+                        fetch: ['ObjectID', 'Project', 'Name', 'GroomingStatus', 'Blocked',
+                            'PlanEstimate', 'Feature', 'Parent', 'PortfolioItem'
+                        ],
+                        filters: [{
+                                property: 'Children.ObjectID',
+                                value: null
+                            },
+                            Rally.data.wsapi.Filter.or([{
+                                property: 'Iteration',
+                                value: null
+                            }, {
+                                property: 'Iteration.StartDate',
+                                operator: '>=',
+                                value: 'today'
+                            }])
+
+                        ],
+                        sorters: [{
+                            property: 'Project.Name',
+                            direction: 'asc'
+                        }],
+                        groupField: 'Project',
+                        getGroupString: function (instance) {
+                            return instance.get('Project').Name
+                        },
+                        limit: Infinity,
+                        pageSize: 2000,
+                        autoLoad: true,
+                        listeners: {
+                            load: function (store, records) {
+                                deferred.resolve(store);
+                            },
+                            scope: this
+                        }
+                    });
+
+                    return deferred.promise;
+                },
+
+                _queryUnscheduledStoriesI: function (featureRecords) {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    Ext.create('Rally.data.wsapi.Store', {
+                        model: 'userstory',
+                        context: this.getContext().getDataContext(),
+                        fetch: ['ObjectID', 'Project', 'Name', 'GroomingStatus', 'Blocked',
+                            'PlanEstimate', 'Feature', 'Parent', 'PortfolioItem'
+                        ],
+                        filters: [{
+                                property: 'Children.ObjectID',
+                                value: null
+                            }, {
+                                property: 'Iteration',
+                                value: null
+                            }, {
+                                property: 'Project.Children.ObjectID',
+                                value: null
+                            }
+                        ],
+                        limit: Infinity,
+                        pageSize: 2000,
+                        autoLoad: true,
+                        listeners: {
+                            load: function (store, records) {
+                                _.each(records, function (record) {
+                                    var feature = record.get('Feature');
+                                    var foid = feature && feature.ObjectID;
+                                    var fparent = foid && featureRecords[foid];
+                                    record.raw._initiative = fparent;
+                                });
+                                deferred.resolve(_.pluck(records, 'raw'));
+                            },
+                            scope: this
+                        }
+                    });
+
+                    return deferred.promise;
+                },
+
+                _queryPortfolioItemHierarchy: function () {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    Ext.create('Rally.data.wsapi.Store', {
+                        model: 'portfolioitem/feature',
+                        context: {
+                            project: null
+                        },
+                        fetch: ['Parent', 'FormattedID', 'ObjectID', 'State', 'Name'],
+                        filters: {
+                            property: 'Parent.ObjectID',
+                            operator: '!=',
+                            value: null
+                        },
+                        limit: Infinity,
+                        pageSize: 2000,
+                        autoLoad: true,
+                        listeners: {
+                            load: function (store, records) {
+                                var featureParent = {};
+                                _.each(records, function (record) {
+                                    featureParent[record.get('ObjectID')] =
+                                        record.get('Parent');
+                                }, this);
+                                deferred.resolve(featureParent);
+                            },
+                            scope: this
+                        }
+                    });
+
+                    return deferred.promise;
+                },
+
+                _onStoriesLoadI: function (records) {
+                    this._wait.hide();
+
+                    var groups = {};
+                    var groupData = {};
+
+                    var categoryProperties = {
+                        'DoR Complete': {
+                            c_GroomingStatus: 'DoR Complete',
+                            Blocked: false
+                        },
+                        'DoR Blocked': {
+                            c_GroomingStatus: 'DoR Complete',
+                            Blocked: true
+                        },
+                        'Grooming Complete': {
+                            c_GroomingStatus: 'Grooming Complete'
+                        }
+                    };
+
+                    _.each(records, function (record) {
+                        var initiative = record._initiative && record._initiative._refObjectName ||
+                            'undefined';
+
+                        groups[initiative] = groups[initiative] || {
+                            name: initiative,
+                            children: []
+                        };
+
+                        groups[initiative].children.push(record);
+                    });
+
+                    _.each(groups, function (group) {
+                        var list = group.children;
+
+                        groupData[group.name] = {};
+                        _.each(categoryProperties, function (properties, category) {
+                            groupData[group.name][category] = _.chain(list)
+                                .where(properties)
+                                .reduce(function (sum, rec) {
+                                    return sum + rec.PlanEstimate;
+                                }, 0)
+                                .value();
+                        });
+                    });
+
+                    this._groupData = groupData;
+                    this._addChart();
+                },
+
+                _addChart: function () {
+                    this.add({
+                        xtype: 'rallychart',
+                        chartData: this._getChartData(),
+                        chartConfig: this._getChartConfig()
+                    });
+                },
+
+                _getChartData: function () {
+                    var data = this._groupData;
+                    var series = _.reduce(data, function (map, obj) {
+                        return _.reduce(obj, function (map, val, key) {
+                            if (key in map) {
+                                map[key].push(val);
+                            } else {
+                                map[key] = [val];
+                            }
+                            return map;
+                        }, map);
+                    }, {});
+
+                    return {
+                        series: [{
+                            name: 'Grooming Complete',
+                            data: series['Grooming Complete'],
+                            color: '#ffc000'
+                        }, {
+                            name: 'DoR Blocked',
+                            data: series['DoR Blocked'],
+                            color: 'red'
+                        }, {
+                            name: 'DoR Complete',
+                            data: series['DoR Complete'],
+                            color: '#8dc63f'
+                        }],
+                        categories: Object.keys(data)
+                    };
+                },
+
+                _getChartConfig: function () {
+                    return {
+                        chart: {
+                            type: 'bar'
+                        },
+                        title: {
+                            text: 'Backlog Health'
+                        },
+                        xAxis: {
+                            title: {
+                                text: 'Teams'
+                            }
+                        },
+                        yAxis: {
+                            min: 0,
+                            max: this.getSetting('maxSize'),
+                            title: {
+                                text: 'Points'
+                            },
+                            plotLines: [{
+                                color: '#FF0000', //'#FF0000',
+                                width: 3,
+                                value: this.getSetting('target1'),
+                                zIndex: 5,
+                                label: {
+                                    text: this.getSetting('label1')
+                                }
+                            }, {
+                                color: '#FF0000',
+                                width: 3,
+                                value: this.getSetting('target2'),
+                                zIndex: 5,
+                                label: {
+                                    text: this.getSetting('label2')
+                                }
+                            }]
+                        },
+                        legend: {
+                            reversed: true
+                        },
+                        plotOptions: {
+                            series: {
+                                stacking: 'normal'
+                            }
+                        }
+                    };
+                }
+            }); // Exit CustomApp Code
+
+            Rally.launchApp('CustomApp', {
+                name: "Backlog Health Chart",
+                parentRepos: ""
+            });
+
+        });
+    </script>
+
+    <style type="text/css">
+        .app {}
+
+        .variable-label {
+            font-family: ProximaNovaSemiBold, Helvetica, Arial;
+            text-transform: uppercase;
+            font-size: 11px;
+        }
+    </style>
+</head>
+
+<body>
+</body>
+
+</html>
