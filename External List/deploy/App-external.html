@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>External-items-list</title>
+
+    <script type="text/javascript" src="https://rally1.rallydev.com/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+                Ext.define("Rally.example.FilteredGrid",{extend:"Rally.app.App",componentCls:"app",launch:function(){this.add({xtype:"rallyfieldvaluecombobox",itemId:"stateComboBox",fieldLabel:"Filter by State:",model:"Defect",field:"State",listeners:{select:this._onSelect,ready:this._onLoad,scope:this}})},_onLoad:function(){this.add({xtype:"rallygrid",columnCfgs:["FormattedID","Name","State","Priority","Severity"],context:this.getContext(),storeConfig:{model:"defect",filters:[this._getStateFilter()]}})},_getStateFilter:function(){return{property:"State",operator:"=",value:this.down("#stateComboBox").getValue()}},_onSelect:function(){var e=this.down("rallygrid").getStore();e.clearFilter(!0),e.filter(this._getStateFilter())}}),Rally.launchApp("Rally.example.FilteredGrid",{name:"Filtered Grid Example"});
+
+            Rally.launchApp('CustomApp', {
+                name:"External-items-list",
+                parentRepos:"",
+                version:"0.1.1"
+            });
+
+        });
+    </script>
+
+
+    <style type="text/css">
+        
+    </style>
+</head>
+<body>
+</body>
+</html>

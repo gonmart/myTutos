@@ -2,9 +2,12 @@
 <html>
 
 <head>
-    <title>Custom Ring Indicator</title>
+    <title>Custom Ring Indicator 1.1</title>
 
-    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+    <script type="text/javascript" src="/apps/2.1/sdk.js">
+    //1.1 Adding the total from Iteration Planning not the aggregation of sprint points
+    //1.0 Using Status field only and the velocity as total of the sprint stories/defects points.
+    </script>
 
     <script type="text/javascript">
         Rally.onReady(function () {
@@ -38,9 +41,7 @@
                             load: this._onLoad,
                             scope: this
                         }
-                    });
-
-                    
+                    });                    
                     
                 },
 
@@ -148,7 +149,23 @@
                     this._createChart(data);
                 },
 
-                _createChart: function (data) {
+                _createChart: function (data) {                    
+                    //Get iteration Information                    
+                    var iterRecord = this.getContext().getTimeboxScope().record.data;                    
+                    var itPlannedVelocity = iterRecord.PlannedVelocity;
+
+                    if(_.isNull(itPlannedVelocity)) {
+                        itPlannedVelocity = 1;
+                    }
+
+                    if(!_.isNumber(itPlannedVelocity)) {
+                        itPlannedVelocity = 1;
+                    }
+                    //End Validations
+
+                    //console.log("itPlannedVelocity: ", itPlannedVelocity);
+                    
+                    
                     var that = this;
                     var colors = [{
                         'Deployed': '#006BD3',
@@ -180,19 +197,16 @@
                         var outer = group[0]; //Status
                         var innerinner = group[1]; //Defects
                         
-                        //Get iteration Information                    
-                        var iterRecord = this.getContext().getTimeboxScope().record.data;
-                        var itPlanEstimate = iterRecord.PlanEstimate;
-                        var itPlannedVelocity = iterRecord.PlannedVelocity;
+                        //This is the old formula to use the Sprint points
+                        //var wip = outer[wipSlice] / _.reduce(outer, function (sum, pts) {
+                        //    return sum + pts;
+                        //}, 0);
+                        // End of formula
 
-                        //console.log("itPlanEstimate: ", itPlanEstimate);
-                        //console.log("itPlannedVelocity: ", itPlannedVelocity);
+                        //This is the new formula to use the Sprint points
+                        var wip = outer[wipSlice] / itPlannedVelocity;
+                        // End of formula
 
-                        //Operation for the Percentage
-                        var wip = outer[wipSlice] / _.reduce(outer, function (sum, pts) {
-                            return sum + pts;
-                        }, 0);
-                        
                         var wipColor = 'red';
 
                         if (wip >= 0.40 && wip < 0.85) {
@@ -211,7 +225,7 @@
 
                         return Ext.create('Rally.ui.chart.Chart', {
                             height: window.innerHeight - 20,
-                            width: size + 80,
+                            width: size + 100,
                             chartData: {
                                 series: [{
                                         name: 'Plan Est',
@@ -262,8 +276,8 @@
                                 },
                                 subtitle: { //Here it goes the inner title
                                     floating: true,
-                                    text: 'Accepted' +
-                                        '<br><span style="font-size:' + (size / 17) + 'px;color:' + wipColor + ';">' + Math.round((wip * 100) || 0) + '%</span><br>' + outer[wipSlice] + ' of ' + outertotal + '<br>Points',
+                                    //text: 'Accepted' + '<br><span style="font-size:' + (size / 17) + 'px;color:' + wipColor + ';">' + Math.round((wip * 100) || 0) + '%</span><br>' + outer[wipSlice] + ' of ' + outertotal + '<br>Points',
+                                    text: 'Accepted' + '<br><span style="font-size:' + (size / 17) + 'px;color:' + wipColor + ';">' + Math.round((wip * 100) || 0) + '%</span><br>' + outer[wipSlice] + ' of ' + itPlannedVelocity + '<br>Points Planned',
                                     style: {
                                         fontSize: (size / 40) + 'px',
                                         color: 'black'
@@ -279,7 +293,7 @@
 
 
             Rally.launchApp('CustomApp', {
-                name: "WIP Indicator",
+                name: "Custom Ring Indicator",
                 parentRepos: ""
             });
 

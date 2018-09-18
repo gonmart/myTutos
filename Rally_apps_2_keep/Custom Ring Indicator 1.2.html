@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Custom Ring Indicator 1.2</title>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js">
+    //1.2 Version that is used for the Schedule State
+    //1.1 Adding the total from Iteration Planning not the aggregation of sprint points
+    //1.0 Using Status field only and the velocity as total of the sprint stories/defects points.
+    </script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.TimeboxScopedApp',
+                componentCls: "app",
+
+                scopeType: 'iteration',
+
+                layout: {
+                    type: 'hbox',
+                    pack: 'center'
+                },
+
+                onScopeChange: function (timeboxScope) {
+                    this._wait = new Ext.LoadMask(this, {});
+                    this.removeAll();    
+                    Ext.create('Rally.data.wsapi.artifact.Store', {
+                        models: ['userstory', 'defect'],
+                        autoLoad: true,
+                        fetch: ['ScheduleState', 'PlanEstimate', 'Project', 'Name',
+                            'FormattedID', 'Blocked', 'c_Status', 'State'
+                        ],
+                        groupField: 'Project',
+                        getGroupString: function (instance) {
+                            return instance.get('Project').Name;
+                        },
+                        filters: timeboxScope.getQueryFilter(),
+                        limit: Infinity,
+                        listeners: {
+                            load: this._onLoad,
+                            scope: this
+                        }
+                    });                    
+                    
+                },
+
+                _onLoad: function (store, records) {
+                    var groups = store.getGroups();
+                    var data = {};
+
+                    groups.unshift({
+                        children: records,
+                        name: this.getContext().getProject().Name
+                    });                    
+
+                    var slices = [{                        
+                        'Deployed': {
+                            ScheduleState: 'Deployed'
+                        },
+                        'Accepted': {
+                            ScheduleState: 'Accepted'
+                        },
+                        'Completed': {
+                            ScheduleState: 'Completed'
+                        },
+                        'In-Progress': {
+                            ScheduleState: 'In-Progress'
+                        },
+                        'Defined': {
+                            ScheduleState: 'Defined'
+                        },
+                        'New': {
+                            ScheduleState: 'New'
+                        }
+                    }, {
+                        'Open': {
+                            State: 'Open'
+                        },
+                        'Reopened': {
+                            State: 'Reopened'
+                        },
+                        'Resolved': {
+                            State: 'Resolved'
+                        },
+                        'Closed': {
+                            State: 'Closed'
+                        },
+                        'Deferred': {
+                            State: 'Deferred'
+                        },
+                        'Hybrid': {
+                            State: 'Hybrid'
+                        },
+                        'Postponed': {
+                            State: 'Postponed'
+                        },
+                        'Rejected': {
+                            State: 'Rejected'
+                        },
+                        'Submitted': {
+                            State: 'Submitted'
+                        }
+                    }];
+
+                    _.each(groups, function (group) {
+                        var list = _.pluck(group.children, 'raw');
+
+                        if (group.name === this.getContext().getProject().Name && list.length !==
+                            records.length) {
+                            return;
+                        }
+
+                        data[group.name] = [{}, {}];
+
+                        _.each(slices[0], function (properties, sliceName) {
+                            data[group.name][0][sliceName] = _.chain(list)
+                                .where(properties)
+                                .reduce(function (sum, rec) {
+                                    return sum + rec.PlanEstimate;
+                                }, 0)
+                                .value();
+                        });
+
+                        var defectlist = _.filter(list, function (item) {
+                            return item._type == 'Defect';
+
+                        });
+
+                        _.each(slices[1], function (properties, sliceName) {
+                            data[group.name][1][sliceName] = _.chain(defectlist)
+                                .where(properties)
+                                .reduce(function (sum, rec) {
+                                    return sum + 1;
+                                }, 0)
+                                .value();
+                        });
+
+                    }, this);
+                    this._createChart(data);
+                },
+
+                _createChart: function (data) {                    
+                    //Get iteration Information                    
+                    var iterRecord = this.getContext().getTimeboxScope().record.data;                    
+                    var itPlannedVelocity = iterRecord.PlannedVelocity;
+
+                    if(_.isNull(itPlannedVelocity)) {
+                        itPlannedVelocity = 1;
+                    }
+
+                    if(!_.isNumber(itPlannedVelocity)) {
+                        itPlannedVelocity = 1;
+                    }
+                    //End Validations
+
+                    //console.log("itPlannedVelocity: ", itPlannedVelocity);
+                    
+                    
+                    var that = this;
+                    var colors = [{
+                        'Deployed': '#337EC6', //blue
+                        'Accepted': '#1E7C00', //dark green                
+                        'Completed': '#8DC63F', //green
+                        'In-Progress': '#FAD200', //yellow
+                        'Defined': '#F6A900', //orange
+                        'New': '#FF8200' //dark orange
+                    },{
+                        'Open': 'Red',
+                        'Reopened': 'Orange',
+                        'Resolved': 'Gray',
+                        'Closed': '#8dc63f',
+                        'Deferred': 'Yellow',
+                        'Hybrid': 'Blue',
+                        'Postponed': 'Brown',
+                        'Rejected': 'Black',
+                        'Submitted': 'Purple'
+                    }];
+
+                    var wipSlice = 'Accepted'; //This is the value that determine the inner percentage, can be 'Accepted','SDET', etc
+                    var center = ['50%', '50%'];
+                    var size = Math.min(window.innerHeight, window.innerWidth);
+                    that.add(_.map(data, function (group, projectName) {
+
+                        var outer = group[0]; //Status
+                        var innerinner = group[1]; //Defects
+                        
+                        //This is the old formula to use the Sprint points
+                        //var wip = outer[wipSlice] / _.reduce(outer, function (sum, pts) {
+                        //    return sum + pts;
+                        //}, 0);
+                        // End of formula
+
+                        //This is the new formula to use the Sprint points
+                        var wip = outer[wipSlice] / itPlannedVelocity;
+                        // End of formula
+
+                        var wipColor = 'red';
+
+                        if (wip >= 0.40 && wip < 0.85) {
+                            wipColor = 'orange';
+                        }
+
+                        if (wip >= 0.85) {
+                            wipColor = 'green';
+                        }
+
+                        //To calculate the Planned Velocity, in this case, is getting the total amount for points in sprint, NOT from Planned Velocity
+                        var outertotal = _.reduce(outer, function (sum, a) {
+                            return sum + a;
+                        }, 0);
+                        // End of my/Ken's Code
+
+                        return Ext.create('Rally.ui.chart.Chart', {
+                            height: window.innerHeight - 20,
+                            width: size + 100,
+                            chartData: {
+                                series: [{
+                                        name: 'Plan Est',
+                                        data: _.map(outer, function (sum,slice) {
+                                            return {
+                                                name: 'Status: ' + slice,
+                                                y: sum,
+                                                color: colors[0][slice]
+                                            };
+                                        }),
+                                        center: center,
+                                        size: size / 2,
+                                        innerSize: size / 2 * 0.7,
+                                        dataLabels: {
+                                            formatter: function () {
+                                                var percentage = +(Math.round(this.percentage + 'e+1') + 'e-1');
+                                                return this.y > 0 ? this.point.name.substr('Status: '.length) + '<br>' + percentage + '%' + ' (' + this.y + ' points' + ')': null;
+                                            }
+                                        }
+                                    }, {
+                                        name: 'Count',
+                                        data: _.map(innerinner, function (
+                                            sum, slice) {
+                                            return {
+                                                name: 'Status: ' + slice,
+                                                y: sum,
+                                                color: colors[1][slice]
+                                            };
+                                        }),
+                                        center: center,
+                                        size: size / 2 * 0.7,
+                                        innerSize: size / 2 * 0.5,
+                                        dataLabels: {
+                                            enabled: false
+                                        }
+                                    }
+
+                                ]
+                            },
+
+                            chartConfig: {
+                                chart: {
+                                    type: 'pie'
+                                },
+                                title: {
+                                    text: '', //'<strong>' + projectName + '</strong>',
+                                    floating: true
+                                },
+                                subtitle: { //Here it goes the inner title
+                                    floating: true,
+                                    //text: 'Accepted' + '<br><span style="font-size:' + (size / 17) + 'px;color:' + wipColor + ';">' + Math.round((wip * 100) || 0) + '%</span><br>' + outer[wipSlice] + ' of ' + outertotal + '<br>Points',
+                                    text: 'Accepted' + '<br><span style="font-size:' + (size / 17) + 'px;color:' + wipColor + ';">' + Math.round((wip * 100) || 0) + '%</span><br>' + outer[wipSlice] + ' of ' + itPlannedVelocity + '<br>Points Planned',
+                                    style: {
+                                        fontSize: (size / 40) + 'px',
+                                        color: 'black'
+                                    },
+                                    verticalAlign: 'middle',
+                                    y: -window.innerHeight / 30 - window.innerHeight / 40
+                                }
+                            }
+                        });
+                    }));
+                }
+            });
+
+
+            Rally.launchApp('CustomApp', {
+                name: "Custom Ring Indicator",
+                parentRepos: ""
+            });
+
+        });
+    </script>
+
+
+
+    <style type="text/css">
+        .app {
+            /* Add app styles here */
+        }
+    </style>
+</head>
+
+<body>
+</body>
+
+</html>
