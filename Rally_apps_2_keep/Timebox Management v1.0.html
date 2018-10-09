@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Timebox Management v1.0</title>
+    <!--  (c) 2017 CA Technologies.  All Rights Reserved. -->
+    <!--  Build Date: Wed Feb 15 2017 22:20:29 GMT-0700 (MST) -->
+
+    <script type="text/javascript">
+        var APP_BUILD_DATE = "Wed Feb 15 2017 22:20:29 GMT-0700 (MST)";
+        var STORY = "US1122";
+        var BUILDER = "kcorkan";
+        var CHECKSUM = 14927785196;
+    </script>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+    <!-- our highcharts (needed so that we can add patterns) 
+    <script type="text/javascript" src="/apps/2.1/lib/analytics/analytics-all.js"></script>
+    -->
+
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+            Ext.define("Rally.technicalservices.InfoLink", {
+                extend: "Rally.ui.dialog.Dialog",
+                alias: "widget.tsinfolink",
+                informationHtml: null,
+                title: "Build Information",
+                defaults: {
+                    padding: 5,
+                    margin: 5
+                },
+                closable: !0,
+                draggable: !0,
+                autoShow: !0,
+                width: 350,
+                informationalConfig: null,
+                items: [{
+                    xtype: "container",
+                    itemId: "information"
+                }],
+                initComponent: function () {
+                    Ext.id(this);
+                    this.title = "<span class='icon-help'> </span>" + this.title, this.callParent(
+                        arguments)
+                },
+                _generateChecksum: function (a) {
+                    var b, c = 305419896;
+                    for (a = a.replace(/var CHECKSUM = .*;/, ""), a = a.replace(
+                            /var BUILDER  = .*;/, ""), a = a.replace(/\s/g, ""), b = 0; b < a.length; b++)
+                        c += a.charCodeAt(b) * b;
+                    return c
+                },
+                _checkChecksum: function (a) {
+                    var b = Ext.create("Deft.Deferred"),
+                        c = this;
+                    return Ext.Ajax.request({
+                        url: document.URL,
+                        params: {
+                            id: 1
+                        },
+                        success: function (a) {
+                            if (text = a.responseText, CHECKSUM) {
+                                var d = c._generateChecksum(text);
+                                if (CHECKSUM !== d) return void b.resolve(!1)
+                            }
+                            b.resolve(!0)
+                        }
+                    }), b.promise
+                },
+                _addToContainer: function (a) {
+                    var b = Ext.apply({
+                        xtype: "container",
+                        height: 200,
+                        overflowY: !0
+                    }, this.informationalConfig);
+                    a.add(b)
+                },
+                afterRender: function () {
+                    var a = Rally.getApp();
+                    if (!Ext.isEmpty(this.informationalConfig)) {
+                        var b = this.down("#information");
+                        this._addToContainer(b)
+                    }
+                    a.isExternal() ? this.addDocked({
+                        xtype: "container",
+                        cls: "build-info",
+                        padding: 2,
+                        dock: "bottom",
+                        html: "... Running externally"
+                    }) : this._checkChecksum(a).then({
+                        scope: this,
+                        success: function (a) {
+                            a || this.addDocked({
+                                xtype: "container",
+                                cls: "build-info",
+                                dock: "bottom",
+                                padding: 2,
+                                html: '<span class="icon-warning"> </span>Checksums do not match'
+                            })
+                        },
+                        failure: function (a) {
+                            console.log("oops:", a)
+                        }
+                    }), this.callParent(arguments)
+                },
+                beforeRender: function () {
+                    if (this.callParent(arguments), this.informationHtml && this.addDocked({
+                            xtype: "component",
+                            componentCls: "intro-panel",
+                            padding: 2,
+                            html: this.informationHtml,
+                            doc: "top"
+                        }), this.addDocked({
+                            xtype: "container",
+                            cls: "build-info",
+                            padding: 2,
+                            dock: "bottom",
+                            html: "This app was created by the CA AC Technical Services Team."
+                        }), APP_BUILD_DATE) {
+                        var a = Ext.String.format("Built on: {0} <br/>Built by: {1}",
+                            APP_BUILD_DATE, BUILDER);
+                        STORY && (a = a + "<br/>Source story: " + STORY), this.addDocked({
+                            xtype: "container",
+                            cls: "build-info",
+                            padding: 2,
+                            dock: "bottom",
+                            html: a
+                        })
+                    }
+                }
+            }), Ext.define("Rally.technicalservices.Logger", {
+                constructor: function (a) {
+                    Ext.apply(this, a)
+                },
+                log: function (a) {
+                    var b = "[ " + Ext.util.Format.date(new Date, "Y-m-d H:i:s.u") + " ]",
+                        c = [];
+                    c = Ext.Array.push(c, [b]), c = Ext.Array.push(c, Ext.Array.slice(arguments, 0)),
+                        window.console && console.log.apply(console, c)
+                }
+            }), Ext.override(Rally.ui.gridboard.GridBoard, {
+                _applyGridFilters: function (a, b) {
+                    return a.store.isLoading() ? void this.on("load", function () {
+                        this._applyGridFilters(a, b)
+                    }, this, {
+                        single: !0
+                    }) : (_.isEmpty(b.types) || _.isEqual(a.store.parentTypes, b.types) || (
+                        this.fireEvent("filtertypeschange", b.types), a.store.parentTypes =
+                        b.types), a.store.clearFilter(!0), void a.store.filter(this._getConfiguredFilters(
+                        b.filters || [], b.types || [])))
+                }
+            }), Ext.define("CA.agile.technicalservices.template.ToggleYesNo", {
+                extend: "Ext.XTemplate",
+                statics: {
+                    DISABLED_CLS: "toggle-button-disabled"
+                },
+                constructor: function (a) {
+                    this.callParent(["<tpl>",
+                        '<div class="toggle-button-template toggle-button-{[this.getState(values)]} {[this.getDisabledCls()]}">',
+                        '<div class="toggle-button-handle"></div>',
+                        '<div class="toggle-button-text">{[this.getText(values)]}</div>',
+                        "</div>", "</tpl>", {
+                            getState: function (a) {
+                                return a ? "on" : "off"
+                            },
+                            getText: function (a) {
+                                return ""
+                            },
+                            getDisabledCls: function () {
+                                return a && a.disabled ? this.self.DISABLED_CLS : ""
+                            }
+                        }
+                    ])
+                }
+            }), Ext.define("CA.agile.technicalservices.utils.ProjectModel", {
+                extend: "Ext.data.TreeModel",
+                fields: [{
+                    name: "Name",
+                    type: "string"
+                }, {
+                    name: "ObjectID",
+                    type: "int"
+                }, {
+                    name: "Path",
+                    type: "string"
+                }, {
+                    name: "_ref",
+                    type: "string"
+                }, {
+                    name: "Parent",
+                    type: "auto"
+                }, {
+                    name: "__include",
+                    type: "boolean",
+                    defaultValue: !1
+                }]
+            }), Ext.define("CA.agile.technicalservices.util.dialog.ProjectPicker", {
+                extend: "Rally.ui.dialog.Dialog",
+                title: "Select Projects",
+                autoShow: !0,
+                draggable: !0,
+                width: 800,
+                closable: !0,
+                layout: "fit",
+                items: [],
+                beforeRender: function () {
+                    this.callParent(arguments);
+                    var a = this;
+                    this.addDocked({
+                        xtype: "toolbar",
+                        dock: "bottom",
+                        padding: "0 0 10 0",
+                        layout: {
+                            type: "hbox",
+                            pack: "center"
+                        },
+                        ui: "footer",
+                        items: [{
+                            xtype: "rallybutton",
+                            itemId: "doneButton",
+                            text: "Done",
+                            cls: "primary rly-small",
+                            userAction: "clicked apply in dialog",
+                            handler: function () {
+                                a.fireEvent("projectsselected", a, a.selectedCache ||
+                                    {}), a.close(), a.destroy()
+                            },
+                            scope: this
+                        }, {
+                            xtype: "rallybutton",
+                            text: "Cancel",
+                            cls: "secondary rly-small",
+                            handler: this.close,
+                            scope: this,
+                            ui: "link"
+                        }]
+                    });
+                    var b = JSON.parse(JSON.stringify(this.projectRoot)),
+                        c = Ext.create("Ext.data.TreeStore", {
+                            root: {
+                                children: b,
+                                expanded: !1
+                            },
+                            model: "CA.agile.technicalservices.utils.ProjectModel"
+                        });
+                    this.projectGrid = Ext.create("Ext.tree.Panel", {
+                        workspace: null,
+                        cls: "rally-grid",
+                        rootVisible: !1,
+                        columns: this._getColumnCfgs(),
+                        itemId: "project-grid",
+                        listeners: {
+                            cellclick: this.updateToggles,
+                            scope: this
+                        },
+                        store: c,
+                        autoScroll: !0
+                    }), this.add(this.projectGrid)
+                },
+                updateToggles: function (a, b, c, d) {
+                    var e = a.panel.headerCt.getHeaderAtIndex(c).dataIndex,
+                        f = d.get(e),
+                        g = d.get("ObjectID");
+                    "__include" === e && (d.set("__include", !f), this.updateRecordChildrenField(d,
+                        !f, "__include"), this.updateCache(e, g, !f), d.expand(!0))
+                },
+                updateRecordChildrenField: function (a, b, c) {
+                    var d = a.childNodes || [];
+                    Ext.Array.each(d, function (a) {
+                        a.set(c, b), this.updateCache(c, a.get("ObjectID"), b), this.updateRecordChildrenField(
+                            a, b, "__include")
+                    }, this)
+                },
+                updateCache: function (a, b, c) {
+                    this.selectedCache || (this.selectedCache = {}), Ext.Object.each(this.selectedCache,
+                        function (a, c) {
+                            var d = _.indexOf(c, b);
+                            d >= 0 && c.splice(d, 1)
+                        }), c && (this.selectedCache[a] || (this.selectedCache[a] = []), this.selectedCache[
+                        a].push(b))
+                },
+                _getColumnCfgs: function () {
+                    var a = [{
+                        text: "Include",
+                        dataIndex: "__include",
+                        align: "center",
+                        renderer: function (a, b, c) {
+                            var d = Ext.create(
+                                "CA.agile.technicalservices.template.ToggleYesNo");
+                            return d.apply(a)
+                        }
+                    }, {
+                        xtype: "treecolumn",
+                        text: "Project",
+                        menuDisabled: !0,
+                        dataIndex: "Name",
+                        flex: 1
+                    }];
+                    return a
+                },
+                destroy: function () {
+                    this.projectGrid && this.projectGrid.destroy(), this.callParent(arguments)
+                }
+            }), Ext.define("CA.agile.technicalservices.util.ProjectUtility", {
+                mixins: {
+                    observable: "Ext.util.Observable"
+                },
+                constructor: function (a) {
+                    this.mixins.observable.constructor.call(this, a), this._fetchProjectsInWorkspace()
+                        .then({
+                            success: this._buildProjectHash,
+                            failure: this._alertFailure,
+                            scope: this
+                        })
+                },
+                getProjectsInHierarchy: function (a) {
+                    var b = [a],
+                        c = this._getProjectChildren(a);
+                    return b.concat(c)
+                },
+                getProjectRoot: function (a) {
+                    return this.projectHash[a]
+                },
+                _getProjectChildren: function (a) {
+                    var b = this.projectHash[a] && this.projectHash[a].children || [],
+                        c = Ext.Array.map(b, function (a) {
+                            return a.ObjectID
+                        });
+                    return Ext.Array.each(c, function (a) {
+                        var b = this._getProjectChildren(a);
+                        c = c.concat(b)
+                    }, this), c
+                },
+                _alertFailure: function (a) {
+                    this.fireEvent("fetcherror", a)
+                },
+                _fetchProjectsInWorkspace: function () {
+                    var a = Ext.create("Deft.Deferred");
+                    return Ext.create("Rally.data.wsapi.Store", {
+                        model: "Project",
+                        fetch: ["ObjectID", "Name", "Parent", "Workspace"],
+                        limit: 1 / 0,
+                        compact: !1,
+                        filters: [{
+                            property: "State",
+                            value: "Open"
+                        }],
+                        sorters: [{
+                            property: "ObjectID",
+                            direction: "ASC"
+                        }]
+                    }).load({
+                        callback: function (b, c) {
+                            c.wasSuccessful() ? a.resolve(b) : a.reject(
+                                "Error loading project structure: " + c.error.errors
+                                .join(","))
+                        },
+                        scope: this
+                    }), a.promise
+                },
+                _buildProjectHash: function (a) {
+                    var b = {},
+                        c = [];
+                    Ext.Array.each(a, function (a) {
+                        b[a.get("ObjectID")] = a.getData(), b[a.get("ObjectID")].children = []
+                    }), Ext.Object.each(b, function (a, d) {
+                        d.__projectHierarchy = this._buildProjectHierarchy(a, b);
+                        var e = d.Parent && d.Parent.ObjectID || null;
+                        if (e && b[e]) {
+                            var f = b[e];
+                            f.children.push(d)
+                        } else c.push(d)
+                    }, this), this.projectHash = b, this.rootProjects = c, this.fireEvent(
+                        "ready")
+                },
+                _buildProjectHierarchy: function (a, b) {
+                    var c = b[a].Parent && b[a].Parent.ObjectID || null,
+                        d = [a];
+                    if (c)
+                        do d.unshift(c), c = b[c] && b[c].Parent && b[c].Parent.ObjectID || null; while (
+                            c);
+                    return d
+                }
+            }), Ext.define("CA.agile.technicalservices.utils.bulkmenu.TimeboxBulkDelete", {
+                alias: "widget.timeboxbulkdelete",
+                extend: "Rally.ui.menu.bulk.MenuItem",
+                config: {
+                    text: "Delete",
+                    handler: function () {
+                        Ext.create("Rally.ui.dialog.ConfirmDialog", {
+                            message: '<div style="text-align:center;">Are you sure you want to delete the selected <b>' +
+                                this.records.length +
+                                " timeboxes</b> ?<br/><br/>Any associations will be removed.<br/>THERE IS NO UNDO for deleting objects of this type.</div>",
+                            title: "Permanent Delete Warning",
+                            confirmLabel: "Delete",
+                            listeners: {
+                                confirm: function () {
+                                    var a = Ext.create("Rally.data.wsapi.batch.Store", {
+                                        data: this.records
+                                    });
+                                    a.removeAll(), Rally.getApp().setLoading(
+                                        "Deleting..."), a.sync().then({
+                                        success: function (a) {
+                                            this.onSuccess(this.records, []),
+                                                Rally.getApp().setLoading(!
+                                                    1)
+                                        },
+                                        failure: function (a) {
+                                            this.onSuccess(this.records, a.exceptions),
+                                                Rally.getApp().setLoading(!
+                                                    1)
+                                        },
+                                        scope: this
+                                    })
+                                },
+                                scope: this
+                            }
+                        })
+                    },
+                    onSuccess: function (a, b, c, d) {
+                        var e = a.length + (1 === a.length ? " timebox has been deleted" :
+                            " timeboxes have been deleted");
+                        a.length === this.records.length ? Rally.ui.notify.Notifier.show({
+                            message: e + "."
+                        }) : Rally.ui.notify.Notifier.showWarning({
+                            message: e + ", but " + b.length + " failed: " + d
+                        }), Ext.callback(this.onActionComplete, null, [a, b])
+                    }
+                }
+            }), Ext.define("timebox-creator", {
+                extend: "Rally.app.App",
+                componentCls: "app",
+                logger: new Rally.technicalservices.Logger,
+                defaults: {
+                    margin: 10
+                },
+                items: [{
+                    xtype: "container",
+                    itemId: "selector_box",
+                    layout: "hbox",
+                    dock: "top"
+                }, {
+                    xtype: "container",
+                    itemId: "grid_box"
+                }],
+                integrationHeaders: {
+                    name: "timebox-creator"
+                },
+                overflowX: "hidden",
+                overflowY: "auto",
+                launch: function () {
+                    this.projectUtility = Ext.create(
+                        "CA.agile.technicalservices.util.ProjectUtility", {
+                            listeners: {
+                                ready: this._updateProjectButtonStatus,
+                                fetcherror: this.showErrorNotification,
+                                scope: this
+                            }
+                        }), this._addSelectors()
+                },
+                _addSelectors: function () {
+                    var a = this.down("#selector_box");
+                    a.removeAll(), a.add({
+                        xtype: "rallycombobox",
+                        itemId: "timeboxType",
+                        fieldLabel: "<b>New</b>",
+                        labelWidth: 35,
+                        labelAlign: "right",
+                        labelCls: "timebox-label",
+                        margin: 5,
+                        store: Ext.create("Ext.data.Store", {
+                            data: [{
+                                name: "Iteration",
+                                value: "iteration"
+                            }, {
+                                name: "Release",
+                                value: "release"
+                            }],
+                            fields: ["name", "value"]
+                        }),
+                        value: "iteration",
+                        displayField: "name",
+                        valueField: "value",
+                        listeners: {
+                            change: this._updateAddStatus,
+                            scope: this,
+                            select: this._buildGrid
+                        }
+                    }), a.add({
+                        xtype: "rallytextfield",
+                        emptyText: "Name",
+                        margin: 5,
+                        maxLength: 256,
+                        width: 200,
+                        height: 22,
+                        itemId: "timeboxName",
+                        listeners: {
+                            change: this._updateAddStatus,
+                            scope: this
+                        }
+                    }), a.add({
+                        xtype: "rallydatefield",
+                        margin: 5,
+                        emptyText: "Start Date",
+                        itemId: "timeboxStart",
+                        listeners: {
+                            change: this._updateAddStatus,
+                            scope: this
+                        }
+                    }), a.add({
+                        xtype: "rallydatefield",
+                        emptyText: "End Date",
+                        margin: 5,
+                        itemId: "timeboxEnd",
+                        listeners: {
+                            change: this._updateAddStatus,
+                            scope: this
+                        }
+                    }), a.add({
+                        xtype: "rallybutton",
+                        margin: "5 0 5 5",
+                        text: "Select Projects",
+                        itemId: "projectButton",
+                        disabled: !0,
+                        cls: "secondary rly-small",
+                        listeners: {
+                            click: this._selectProjects,
+                            scope: this
+                        }
+                    });
+                    var b = a.add({
+                        xtype: "rallybutton",
+                        margin: "5 0 5 0",
+                        text: "Clear",
+                        itemId: "clearProjectButton",
+                        visible: !1,
+                        cls: "secondary rly-small clear-button",
+                        listeners: {
+                            click: this._updateSelectedProjects,
+                            scope: this
+                        }
+                    });
+                    b.setVisible(!1), a.add({
+                        xtype: "rallybutton",
+                        itemId: "addButton",
+                        margin: "5 10 5 10",
+                        text: "Add",
+                        disabled: !0,
+                        listeners: {
+                            click: this._addTimeboxes,
+                            scope: this
+                        }
+                    }), this._buildGrid()
+                },
+                _updateProjectButtonStatus: function () {
+                    this.down("#projectButton").setDisabled(!1)
+                },
+                _updateAddStatus: function () {
+                    this.logger.log("_updateAddStatus");
+                    var a = this._getTimeboxAttributes(),
+                        b = this.getTimeboxType(),
+                        c = !1;
+                    c = "release" === b ? a.Name && a.ReleaseStartDate && a.ReleaseDate && a.ReleaseStartDate <
+                        a.ReleaseDate || !1 : a.Name && a.StartDate && a.EndDate && a.StartDate < a
+                        .EndDate || !1, this.down("#addButton").setDisabled(!c)
+                },
+                _getTimeboxAttributes: function () {
+                    var a = {
+                        Name: this.down("#timeboxName") && this.down("#timeboxName").getValue() ||
+                            null
+                    };
+                    return "release" === this.getTimeboxType() ? (a.ReleaseStartDate = this.down(
+                            "#timeboxStart") && this.down("#timeboxStart").getValue() || null,
+                        a.ReleaseDate = this.down("#timeboxEnd") && this.down("#timeboxEnd").getValue() ||
+                        null) : (a.StartDate = this.down("#timeboxStart") && this.down(
+                        "#timeboxStart").getValue() || null, a.EndDate = this.down(
+                        "#timeboxEnd") && this.down("#timeboxEnd").getValue() || null), a
+                },
+                getTimeboxProjects: function () {
+                    return this.selectedProjects && 0 !== this.selectedProjects.length ? this.selectedProjects :
+                        this.projectUtility.getProjectsInHierarchy(this.getContext().getProject().ObjectID)
+                },
+                _selectProjects: function () {
+                    this.logger.log("_selectProjects");
+                    var a = Ext.getBody().getViewSize().height,
+                        b = (Ext.getBody().getViewSize().width, Ext.create(
+                            "CA.agile.technicalservices.util.dialog.ProjectPicker", {
+                                projectRoot: this.projectUtility.getProjectRoot(this.getContext()
+                                    .getProject().ObjectID),
+                                height: a,
+                                listeners: {
+                                    projectsselected: this._updateSelectedProjects,
+                                    scope: this
+                                }
+                            }));
+                    b.alignTo(Ext.getBody(), "t-t")
+                },
+                _updateSelectedProjects: function (a, b) {
+                    this.logger.log("_updateSelectedProjects", b), "clearProjectButton" === a.itemId &&
+                        (b = null), this.selectedProjects = b && b.__include || [], this.selectedProjects
+                        .length > 0 ? (this.down("#projectButton").setText(this.selectedProjects.length +
+                                " Projects"), this.down("#projectButton").removeCls("secondary"),
+                            this.down("#projectButton").addCls("primary"), this.down(
+                                "#projectButton").addCls("selected-button"), this.down(
+                                "#clearProjectButton").setVisible(!0)) : (this.down(
+                                "#projectButton").setText("Select Projects"), this.down(
+                                "#projectButton").removeCls("primary"), this.down("#projectButton")
+                            .addCls("secondary"), this.down("#projectButton").removeCls(
+                                "selected-button"), this.down("#clearProjectButton").setVisible(!1)
+                        )
+                },
+                _addTimeboxes: function () {
+                    var a = this._getTimeboxAttributes(),
+                        b = [],
+                        c = Ext.Array.unique(this.getTimeboxProjects());
+                    this.logger.log("_addTimeboxes", c, a), this.setLoading("Creating timeboxes..."),
+                        Rally.data.ModelFactory.getModel({
+                            type: this.getTimeboxType(),
+                            success: function (d) {
+                                var e = d.getField("Project");
+                                e.readOnly = !1, e.persist = !0, Ext.Array.each(c, function (
+                                    c) {
+                                    b.push(this._createTimebox(d, c, a))
+                                }, this), Deft.Promise.all(b).then({
+                                    success: this.showSuccess,
+                                    failure: this.showErrorNotification,
+                                    scope: this
+                                }).always(function () {
+                                    this.setLoading(!1), this._buildGrid()
+                                }, this)
+                            },
+                            scope: this
+                        })
+                },
+                _createTimebox: function (a, b, c) {
+                    var d = Ext.create("Deft.Deferred"),
+                        e = Ext.clone(c);
+                    e.Project = {
+                        _ref: "/project/" + b
+                    }, e.State = "Planning", this.logger.log("_createTimebox", e);
+                    var f = Ext.create(a, e);
+                    return f.save({
+                        callback: function (a, b) {
+                            b.wasSuccessful() ? d.resolve(a) : d.resolve(b.error.errors
+                                .join(","))
+                        }
+                    }), d.promise
+                },
+                showSuccess: function (a) {
+                    this.logger.log("showSuccess", a);
+                    var b = [],
+                        c = 0;
+                    Ext.Array.each(a, function (a) {
+                        Ext.isString(a) ? Ext.Array.contains(b, a) || b.push(a) : c++
+                    });
+                    var d = Ext.String.format("{0} of {1} timeboxes created successfully.", c, a.length);
+                    c < a.length ? (d += Ext.String.format(
+                        "<br/><br/>{0} timeboxes were not created for the following reason(s): <br/>",
+                        a.length - c), d += b.join("<br/>"), this.logger.log("ShowWarning ",
+                        d), Rally.ui.notify.Notifier.showWarning({
+                        message: d,
+                        allowHTML: !0
+                    })) : Rally.ui.notify.Notifier.show({
+                        message: d
+                    })
+                },
+                showErrorNotification: function (a) {
+                    Rally.ui.notify.Notifier.showError({
+                        message: a
+                    })
+                },
+                _buildGrid: function () {
+                    this.down("rallygridboard") && this.down("rallygridboard").destroy(), this.logger
+                        .log("_buildGrid timeboxType:", this.getTimeboxType()), this.getTimeboxType() &&
+                        Ext.create("Rally.data.wsapi.TreeStoreBuilder").build({
+                            models: [this.getTimeboxType()],
+                            autoLoad: !0,
+                            enableHierarchy: !1
+                        }).then({
+                            success: this._addGrid,
+                            scope: this
+                        })
+                },
+                _addGrid: function (a) {
+                    var b = [this.getTimeboxType()],
+                        c = this.down("#selector_box") && this.down("#selector_box").getHeight() ||
+                        0,
+                        d = this.getHeight(),
+                        e = d - c - 40;
+                    this.logger.log("_addGrid height, timeboxType", d, b, c, e);
+                    var f = b[0] + "-gbs";
+                    this.logger.log("gridboardStateId", f), this.add({
+                        xtype: "rallygridboard",
+                        context: this.getContext(),
+                        modelNames: b,
+                        toggleState: "grid",
+                        stateId: f,
+                        stateful: !0,
+                        plugins: [{
+                            ptype: "rallygridboardinlinefiltercontrol",
+                            inlineFilterButtonConfig: {
+                                stateful: !0,
+                                stateId: b[0] + "-filter",
+                                modelNames: b,
+                                inlineFilterPanelConfig: {
+                                    quickFilterPanelConfig: {
+                                        defaultFields: ["Name", "Project"]
+                                    }
+                                }
+                            }
+                        }, {
+                            ptype: "rallygridboardfieldpicker",
+                            headerPosition: "left",
+                            modelNames: b,
+                            stateful: !0,
+                            stateId: b[0] + "-column"
+                        }],
+                        gridConfig: {
+                            store: a,
+                            listeners: {
+                                afterbusbulkupdate: function () {
+                                    console.log("afterbusbulkupdate")
+                                },
+                                afterbusremove: function () {
+                                    console.log("afterbusremovev")
+                                }
+                            },
+                            columnCfgs: ["Name", "Project"],
+                            bulkEditConfig: {
+                                onActionComplete: function () {
+                                    Rally.getApp()._buildGrid()
+                                },
+                                items: [{
+                                    xtype: "timeboxbulkdelete"
+                                }]
+                            }
+                        },
+                        height: Math.max(e, 200),
+                        width: "95%"
+                    })
+                },
+                getTimeboxType: function () {
+                    return this.down("#timeboxType") && this.down("#timeboxType").getValue()
+                },
+                getOptions: function () {
+                    return [{
+                        text: "About...",
+                        handler: this._launchInfo,
+                        scope: this
+                    }]
+                },
+                _launchInfo: function () {
+                    this.about_dialog && this.about_dialog.destroy(), this.about_dialog = Ext.create(
+                        "Rally.technicalservices.InfoLink", {})
+                },
+                isExternal: function () {
+                    return "undefined" == typeof this.getAppId()
+                }
+            });
+
+            Rally.launchApp('timebox-creator', {
+                name: 'Timebox Creator'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+        .app {}
+
+        .tsinfolink {
+            position: absolute;
+            right: 0px;
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            text-align: center;
+            color: white;
+            background: #C0C0C0;
+            border-style: solid;
+            border-width: 1px;
+            margin-top: 25px;
+            margin-right: 5px;
+            cursor: pointer;
+        }
+
+        .timebox-label {
+            font-family: NotoSansBold, Helvetica, Arial;
+            font-size: 11px;
+            text-align: right;
+        }
+
+        .toggle-button-template.toggle-button-no {
+            background-color: silver;
+        }
+
+        .toggle-button-template.toggle-button-yes {
+            background-color: #8DC63F;
+        }
+
+        .toggle-button-template {
+            -webkit-border-radius: 14px;
+            -moz-border-radius: 14px;
+            -ms-border-radius: 14px;
+            -o-border-radius: 14px;
+            border-radius: 14px;
+            cursor: pointer;
+            display: inline-block;
+            height: 18px;
+            text-align: left;
+            width: 32px;
+        }
+
+        .clear-button {
+            border-top-left-radius: 0px !important;
+            border-bottom-left-radius: 0px !important;
+        }
+
+        .selected-button {
+            border-top-right-radius: 0px !important;
+            border-bottom-right-radius: 0px !important;
+        }
+    </style>
+
+</head>
+
+<body></body>
+
+</html>

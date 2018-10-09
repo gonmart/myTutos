@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Last Verdict By Iteration 1.1</title>
+
+    <script type="text/javascript">
+        var APP_BUILD_DATE = "Fri May 12 2017 11:18:53 GMT-0600 (MDT)";
+        var CHECKSUM = 19927719233;
+    </script>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+
+            Ext.define('Rally.technicalservices.InfoLink', {
+                extend: 'Rally.ui.dialog.Dialog',
+                alias: 'widget.tsinfolink',
+                informationHtml: null,
+                title: "Build Information",
+                defaults: {
+                    padding: 5,
+                    margin: 5
+                },
+                closable: true,
+                draggable: true,
+                autoShow: true,
+                width: 350,
+
+                initComponent: function () {
+                    var id = Ext.id(this);
+                    this.title = "<span class='icon-help'> </span>" + this.title;
+                    this.callParent(arguments);
+                },
+
+                _generateChecksum: function (string) {
+                    var chk = 0x12345678,
+                        i;
+                    string = string.replace(/var CHECKSUM = .*;/, "");
+                    string = string.replace(/\s/g, ""); //Remove all whitespace from the string.
+
+                    for (i = 0; i < string.length; i++) {
+                        chk += (string.charCodeAt(i) * i);
+                    }
+
+                    return chk;
+                },
+
+                _checkChecksum: function (container) {
+                    var deferred = Ext.create('Deft.Deferred');
+                    //console.log("_checkChecksum", container);
+                    var me = this;
+
+                    Ext.Ajax.request({
+                        url: document.URL,
+                        params: {
+                            id: 1
+                        },
+                        success: function (response) {
+                            text = response.responseText;
+                            if (CHECKSUM) {
+                                if (CHECKSUM !== me._generateChecksum(text)) {
+                                    //console.log("Checksums don't match!");
+                                    deferred.resolve(false);
+                                    return;
+                                }
+                            }
+                            deferred.resolve(true);
+                        }
+                    });
+
+                    return deferred.promise;
+                },
+
+                afterRender: function () {
+                    var app = Rally.getApp();
+
+                    if (!app.isExternal()) {
+
+                        this._checkChecksum(app).then({
+                            scope: this,
+                            success: function (result) {
+                                if (!result) {
+                                    this.addDocked({
+                                        xtype: 'container',
+                                        cls: 'build-info',
+                                        padding: 2,
+                                        html: '<span class="icon-warning"> </span>Checksums do not match'
+                                    });
+                                }
+                            },
+                            failure: function (msg) {
+                                //console.log("oops:", msg);
+                            }
+                        });
+                    } else {
+                        this.addDocked({
+                            xtype: 'container',
+                            cls: 'build-info',
+                            padding: 2,
+                            html: '... Running externally'
+                        });
+                    }
+                    this.callParent(arguments);
+                },
+
+                beforeRender: function () {
+                    var me = this;
+                    this.callParent(arguments);
+
+                    if (this.informationHtml) {
+                        this.addDocked({
+                            xtype: 'component',
+                            componentCls: 'intro-panel',
+                            padding: 2,
+                            html: this.informationHtml
+                        });
+                    }
+
+                    this.addDocked({
+                        xtype: 'container',
+                        cls: 'build-info',
+                        padding: 2,
+                        html: "This app was created by the Rally Technical Services Team."
+                    });
+
+                    if (APP_BUILD_DATE) {
+                        this.addDocked({
+                            xtype: 'container',
+                            cls: 'build-info',
+                            padding: 2,
+                            html: 'Build date/time: ' + APP_BUILD_DATE
+                        });
+                    }
+                }
+            });
+
+            Ext.define('Rally.technicalservices.Logger', {
+                constructor: function (config) {
+                    Ext.apply(this, config);
+                },
+                log: function (args) {
+                    var timestamp = "[ " + Ext.util.Format.date(new Date(), "Y-m-d H:i:s.u") + " ]";
+                    var output_args = [];
+                    output_args = Ext.Array.push(output_args, [timestamp]);
+                    output_args = Ext.Array.push(output_args, Ext.Array.slice(arguments, 0));
+                    //window.console && //console.log.apply(console, output_args);
+                }
+            });
+
+            Ext.define('Rally.technicalservices.FileUtilities', {
+                logger: new Rally.technicalservices.Logger(),
+                saveCSVToFile: function (csv, file_name, type_object) {
+                    if (type_object === undefined) {
+                        type_object = {
+                            type: 'text/csv;charset=utf-8'
+                        };
+                    }
+                    this.saveAs(csv, file_name, type_object);
+                },
+                saveAs: function (textToWrite, fileName) {
+                    if (Ext.isIE9m) {
+                        Rally.ui.notify.Notifier.showWarning({
+                            message: "Export is not supported for IE9 and below."
+                        });
+                        return;
+                    }
+
+                    var textFileAsBlob = null;
+                    try {
+                        textFileAsBlob = new Blob([textToWrite], {
+                            type: 'text/plain'
+                        });
+                    } catch (e) {
+                        window.BlobBuilder = window.BlobBuilder ||
+                            window.WebKitBlobBuilder ||
+                            window.MozBlobBuilder ||
+                            window.MSBlobBuilder;
+                        if (window.BlobBuilder && e.name == 'TypeError') {
+                            bb = new BlobBuilder();
+                            bb.append([textToWrite]);
+                            textFileAsBlob = bb.getBlob("text/plain");
+                        }
+
+                    }
+
+                    if (!textFileAsBlob) {
+                        Rally.ui.notify.Notifier.showWarning({
+                            message: "Export is not supported for this browser."
+                        });
+                        return;
+                    }
+
+                    var fileNameToSaveAs = fileName;
+
+                    if (Ext.isIE10p) {
+                        window.navigator.msSaveOrOpenBlob(textFileAsBlob, fileNameToSaveAs); // Now the user will have the option of clicking the Save button and the Open button.
+                        return;
+                    }
+
+                    var url = this.createObjectURL(textFileAsBlob);
+
+                    if (url) {
+                        var downloadLink = document.createElement("a");
+                        if ("download" in downloadLink) {
+                            downloadLink.download = fileNameToSaveAs;
+                        } else {
+                            //Open the file in a new tab
+                            downloadLink.target = "_blank";
+                        }
+
+                        downloadLink.innerHTML = "Download File";
+                        downloadLink.href = url;
+                        if (!Ext.isChrome) {
+                            // Firefox requires the link to be added to the DOM
+                            // before it can be clicked.
+                            downloadLink.onclick = this.destroyClickedElement;
+                            downloadLink.style.display = "none";
+                            document.body.appendChild(downloadLink);
+                        }
+                        downloadLink.click();
+                    } else {
+                        Rally.ui.notify.Notifier.showError({
+                            message: "Export is not supported "
+                        });
+                    }
+
+                },
+
+                createObjectURL: function (file) {
+                    if (window.URL) {
+                        return window.URL.createObjectURL(file);
+                    } else if (window.URL && window.URL.createObjectURL) {
+                        return window.URL.createObjectURL(file);
+                    } else {
+                        return null;
+                    }
+                },
+
+                destroyClickedElement: function (event) {
+                    document.body.removeChild(event.target);
+                },
+
+                convertDataArrayToCSVText: function (data_array, requestedFieldHash) {
+
+                    var text = '';
+                    Ext.each(Object.keys(requestedFieldHash), function (key) {
+                        text += requestedFieldHash[key] + ',';
+                    });
+                    text = text.replace(/,$/, '\n');
+
+                    Ext.each(data_array, function (d) {
+                        Ext.each(Object.keys(requestedFieldHash), function (key) {
+                            if (d[key]) {
+                                if (typeof d[key] === 'object') {
+                                    if (d[key].FormattedID) {
+                                        text += Ext.String.format("\"{0}\",", d[key]
+                                            .FormattedID);
+                                    } else if (d[key].Name) {
+                                        text += Ext.String.format("\"{0}\",", d[key]
+                                            .Name);
+                                    } else if (!isNaN(Date.parse(d[key]))) {
+                                        text += Ext.String.format("\"{0}\",", Rally
+                                            .util.DateTime.formatWithDefaultDateTime(
+                                                d[key]));
+                                    } else {
+                                        text += Ext.String.format("\"{0}\",", d[key]
+                                            .toString());
+                                    }
+                                } else {
+                                    text += Ext.String.format("\"{0}\",", d[key]);
+                                }
+                            } else {
+                                text += ',';
+                            }
+                        }, this);
+                        text = text.replace(/,$/, '\n');
+                    }, this);
+                    return text;
+                },
+                
+                getCSVFromGrid: function (app, grid, exportColumns) {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    var store = Ext.create('Rally.data.wsapi.Store', {
+                        fetch: grid.getStore().config.fetch,
+                        filters: grid.getStore().config.filters,
+                        model: grid.getStore().config.model,
+                        enablePostGet: true,
+                        pageSize: 2000
+                    });
+
+                    var columns = exportColumns || grid.columns;
+                    var column_names = [];
+                    var headers = [];
+
+                    Ext.Array.each(columns, function (column) {
+                        if (column.dataIndex || column.renderer) {
+                            column_names.push(column.dataIndex);
+                            if (column.csvText) {
+                                headers.push(column.csvText);
+                            } else {
+                                headers.push(column.text);
+                            }
+                        }
+                    });
+
+                    var csv = [];
+                    csv.push('"' + headers.join('","') + '"');
+                    var records = grid.getStore().getRange();
+                    for (var i = 0; i < records.length; i++) {
+                        var record = records[i];
+                        var node_values = [];
+
+                        Ext.Array.each(columns, function (column) {
+                            if (column.xtype != 'rallyrowactioncolumn') {
+                                if (column.dataIndex) {
+                                    var column_name = column.dataIndex;
+                                    var display_value = record.get(column_name);
+
+
+                                    if (!column._csvIgnoreRender && (column.renderer ||
+                                            column.exportRenderer)) {
+                                        if (column.exportRenderer) {
+                                            display_value = column.exportRenderer(
+                                                display_value, {}, record);
+                                        } else {
+                                            display_value = column.renderer(display_value, {},
+                                                record);
+                                        }
+                                    }
+
+                                    node_values.push(display_value);
+                                } else {
+                                    var display_value = null;
+                                    if (!column._csvIgnoreRender && (column.renderer ||
+                                            column.exportRenderer)) {
+                                        if (column.exportRenderer) {
+                                            display_value = column.exportRenderer(
+                                                display_value, {}, record);
+                                        } else {
+                                            display_value = column.renderer(display_value, {},
+                                                record);
+                                        }
+                                        node_values.push(display_value);
+                                    }
+                                }
+
+                            }
+                        }, this);
+                        csv.push('"' + node_values.join('","') + '"');
+
+                    };
+                    csv = csv.join('\r\n');
+                    deferred.resolve(csv);
+                    return deferred.promise;
+
+                }
+
+            });
+
+            Ext.define('Rally.technicalservices.ProgressBarTemplate', {
+                requires: [],
+                extend: 'Ext.XTemplate',
+                width: '75%',
+                height: '40px',
+                percentDoneName: 'percentDone',
+                progressCountName: 'casesRun',
+                totalCountName: 'totalCases',
+                isClickable: false,
+                showOnlyIfInProgress: false,
+
+                showDangerNotificationFn: function () {
+                    return false;
+                },
+
+                calculateColorFn: function (values) {
+                    if (this.calculatePercent(values) > 50) {
+                        return '#8DC63F'
+                    } else {
+                        return '#FAD200';
+                    }
+                },
+                
+                generateLabelTextFn: function (recordData) {
+                    return Ext.String.format('{0} of {1} Test Cases Run (<b>{2}%</b>)', recordData[
+                        this.progressCountName], recordData[this.totalCountName], this.calculatePercent(
+                        recordData));
+                },
+
+                config: {
+                    shouldShowPercentDone: function (recordData) {
+
+                        var value = recordData[this.totalCountName];
+                        if (_.isString(value)) {
+                            value = +value;
+                        }
+                        if (!Ext.isNumber(value)) {
+                            return false;
+                        }
+                        return true;
+                    },
+
+                    getContainerClass: function (recordData) {
+                        return '';
+                    },
+
+                    getClickableClass: function () {
+                        return this.isClickable ? 'clickable' : '';
+                    },
+
+                    getDimensionStyle: function () {
+                        return 'width: ' + this.width + '; height: ' + this.height +
+                            '; line-height: ' + this.height + ';display: inline-block';
+                    },
+
+                    calculateWidth: function (recordData) {
+                        var percentDone = this.calculatePercent(recordData);
+                        return percentDone > 100 ? '100%' : percentDone + '%';
+                    },
+
+                    calculatePercent: function (recordData) {
+
+                        if (recordData[this.totalCountName] && recordData[this.totalCountName] > 0) {
+                            var percentDone = (recordData[this.progressCountName] || 0) /
+                                recordData[this.totalCountName];
+                            return Math.round(percentDone * 100);
+                        }
+                        return 0;
+
+                    }
+                },
+
+                constructor: function (config) {
+                    var templateConfig = config && config.template || [
+                        '<tpl if="this.shouldShowPercentDone(values)">',
+                        '<div class="progress-bar-container field-{[this.percentDoneName]} {[this.getClickableClass()]} {[this.getContainerClass(values)]}" style="{[this.getDimensionStyle()]}">',
+                        '<div class="rly-progress-bar" style="background-color: {[this.calculateColorFn(values)]}; width: {[this.calculateWidth(values)]}; "></div>',
+                        '<tpl if="this.showDangerNotificationFn(values)">',
+                        '<div class="progress-bar-danger-notification"></div>',
+                        '</tpl>',
+                        '<div class="progress-bar-label">',
+                        '{[this.generateLabelTextFn(values)]}',
+                        '</div>',
+                        '</div>',
+                        '<tpl elseif="{message}">',
+                        '<div>{message}</div>',
+                        '</tpl>'
+
+                    ];
+
+                    templateConfig.push(this.config);
+                    templateConfig.push(config);
+
+                    return this.callParent(templateConfig);
+                }
+            });
+
+            Ext.define("last-verdict-by-iteration", {
+                extend: 'Rally.app.App',
+                componentCls: 'app',
+                logger: new Rally.technicalservices.Logger(),
+                defaults: {
+                    margin: 10
+                },
+
+                integrationHeaders: {
+                    name: "last-verdict-by-release"
+                },
+
+                onScopedDashboard: false,
+                scopeType: 'iteration',
+                artifactModels: ['Defect', 'UserStory', 'TestSet'],
+                artifactFetch: ['ObjectID', 'Project', 'FormattedID', 'Name'],
+                testCaseFetch: ['FormattedID', 'Name', 'LastVerdict', 'ObjectID', 'WorkProduct',
+                    'Owner', 'LastRun', 'FirstName', 'LastName', 'TestSets:summary[FormattedID]',
+                    'Method', 'LastBuild', 'Project'
+                ],
+                notTestedText: 'Not Tested',
+
+                launch: function () {
+                    this.logger.log('launch');
+                    var context = this.getContext();
+
+                    this._fetchPrefixes().then({
+                        success: function (prefixHash) {
+                            this.logger.log('launch prefix records', prefixHash);
+                            this.prefixHash = prefixHash;
+                            this.onScopedDashboard = this._hasScope();
+                            this._addComponents(this.onScopedDashboard);
+                            this.onTimeboxScopeChange(context.getTimeboxScope() || null);
+                        },
+                        failure: function (msg) {},
+                        scope: this
+                    });
+
+                },
+
+                _fetchPrefixes: function () {
+                    var deferred = Ext.create('Deft.Deferred');
+
+                    var filters = [{
+                        property: 'ElementName',
+                        value: 'Defect'
+                    }, {
+                        property: 'ElementName',
+                        value: 'HierarchicalRequirement'
+                    }, {
+                        property: 'ElementName',
+                        value: 'TestSet'
+                    }];
+                    filters = Rally.data.wsapi.Filter.or(filters);
+
+                    Ext.create('Rally.data.wsapi.Store', {
+                        model: 'TypeDefinition',
+                        fetch: ['ElementName', 'DisplayName', 'IDPrefix'],
+                        filters: filters
+                    }).load({
+                        callback: function (records, operation) {
+                            var prefixHash = {};
+                            _.each(records, function (r) {
+                                prefixHash[r.get('ElementName')] = r.get(
+                                    'IDPrefix');
+                            });
+                            deferred.resolve(prefixHash);
+                        },
+                        scope: this
+                    });
+
+                    return deferred;
+                },
+
+                _hasScope: function () {
+                    var context = this.getContext();
+                    return context.getTimeboxScope() && context.getTimeboxScope().getType() ===
+                        this.scopeType;
+                },
+
+                onTimeboxScopeChange: function (timebox) {
+                    //console.log("Timebox: ", timebox);
+                    //console.log("timebox.type: ",timebox.type);
+                    if (timebox && (timebox.type === 'Iteration' || timebox.type === 'iteration')) {
+                        //console.log("INSIDE IF");
+                        this.getContext().setTimeboxScope(timebox);
+                        this._update();
+                    }else{
+                        //console.log("ELSE IF");
+                    }
+                },
+
+                getReleaseTimeboxRecord: function () {
+                    if (this.onScopedDashboard) {
+                        return (this.getContext().getTimeboxScope() && this.getContext().getTimeboxScope()
+                            .getRecord()) || null;
+                    }
+                    return this.down('rallyiterationcombobox').getRecord() || null;
+                },
+
+                _addComponents: function (hasTimeboxScope) {
+                    this.logger.log('_addComponents');
+
+                    if (!this.down('#ct-header')) {
+                        var header = this.add({
+                            xtype: 'container',
+                            itemId: 'ct-header',
+                            layout: {
+                                type: 'hbox'
+                            }
+                        });
+
+                        if (!hasTimeboxScope) {
+                            header.add({
+                                xtype: 'rallyiterationcombobox',
+                                listeners: {
+                                    scope: this,
+                                    change: this._update
+                                }
+                            });
+                        }
+
+                        var tpl = new Rally.technicalservices.ProgressBarTemplate({});
+                        header.add({
+                            xtype: 'container',
+                            itemId: 'ct-summary',
+                            tpl: tpl,
+                            margin: '0 100 0 100',
+                            flex: 1
+
+                        });
+
+
+                        header.add({
+                            xtype: 'rallybutton',
+                            text: 'Export',
+                            listeners: {
+                                scope: this,
+                                click: this._export
+                            }
+                        });
+                    }
+
+                },
+
+                _update: function () {
+
+                    this.logger.log('_update', this.getReleaseTimeboxRecord());
+                    if (!this.getReleaseTimeboxRecord()) {
+                        this.down('#ct-summary').update({
+                            message: "Please select a Release"
+                        });
+                        if (this.down('rallygrid')) {
+                            this.down('rallygrid').destroy();
+                        }
+                        return;
+                    }
+
+                    var filters = Ext.create('Rally.data.wsapi.Filter', {
+                        property: 'Iteration.Name',
+                        value: this.getReleaseTimeboxRecord().get('Name')
+                    });
+
+                    ////console.log("What da hack is this filter?", filters);
+
+                    Ext.create('Rally.data.wsapi.artifact.Store', {
+                        models: this.artifactModels,
+                        fetch: this.artifactFetch,
+                        filters: filters,
+                        enablePostGet: true,
+                        limit: 'Infinity',
+                        sorters: [{
+                            property: 'FormattedID',
+                            direction: 'ASC'
+                        }]
+                    }).load({
+                        callback: this._fetchTestCases,
+                        scope: this
+                    });
+                },
+
+                _getTestSetPrefix: function () {
+                    return this.prefixHash['TestSet'];
+                },
+
+                _getTestCaseFilters: function (artifacts) {
+                    var prefixHash = {},
+                        testSetPrefix = this._getTestSetPrefix(),
+                        filters = [];
+
+                    _.each(artifacts, function (a) {
+                        var oid = a.get('ObjectID'),
+                            fid = a.get('FormattedID'),
+                            prefix = fid.replace(/[0-9]/g, "");
+
+                        if (prefix === testSetPrefix) {
+                            filters.push({
+                                // property: 'TestSets.FormattedID',
+                                // operator: 'contains',
+                                // value: fid
+                                property: 'TestSets.ObjectID',
+                                value: oid
+                            });
+                        } else {
+                            filters.push({
+                                property: 'WorkProduct.ObjectID',
+                                value: oid
+                            });
+                        }
+                    });
+
+                    if (filters && filters.length > 1) {
+                        filters = Rally.data.wsapi.Filter.or(filters);
+                        this.logger.log('_getTestCaseFilters', filters.toString());
+                    }
+                    return filters;
+
+                },
+
+                _fetchTestCases: function (artifacts, operation) {
+                    this.logger.log('_fetchTestCases', artifacts, operation);
+
+
+                    var formatted_ids = _.map(artifacts, function (a) {
+                        return a.get('FormattedID');
+                    });
+                    this.logger.log('formattedIds', formatted_ids);
+
+                    this.artifactRecords = artifacts;
+
+                    //TODO: check the number of artifacts.  We may want to consider chunking if this is too big....
+                    var filters = this._getTestCaseFilters(artifacts);
+
+                    this.logger.log('artifact filters', filters.toString());
+                    var store = Ext.create('Rally.data.wsapi.Store', {
+                        model: 'TestCase',
+                        fetch: this.testCaseFetch,
+                        filters: filters,
+                        //  limit: 'Infinity',
+                        compact: false,
+                        pageSize: 2000,
+                        enablePostGet: true,
+                        groupField: 'LastVerdict',
+                        getGroupString: function (record) {
+                            var verdict = record.get('LastVerdict');
+                            return verdict || 'Not Tested';
+                        }
+                    });
+
+                    store.on('load', this._buildSummaryGrid, this);
+
+                    this._buildGroupedGrid(store);
+
+
+                },
+
+                _buildSummaryGrid: function (store, testCaseRecords, operation) {
+                    this.logger.log('_buildDisplay', testCaseRecords, store, _.map(testCaseRecords,
+                        function (tc) {
+                            return tc.get('FormattedID');
+                        }));
+
+                    var casesRun = _.filter(testCaseRecords, function (tc) {
+                        return tc.get('LastVerdict')
+                    });
+                    this.logger.log('_mungeData', casesRun.length, testCaseRecords.length);
+
+                    this.down('#ct-summary').update({
+                        casesRun: casesRun.length,
+                        totalCases: testCaseRecords.length
+                    });
+                },
+
+                _buildGroupedGrid: function (store) {
+
+                    if (this.down('#grouped-grid')) {
+                        this.down('#grouped-grid').destroy();
+                    }
+                    this.logger.log('_buildGroupedGrid', store);
+
+                    if (store && store.totalCount > 2000) {
+                        Rally.ui.notify.Notifier.showWarning({
+                            message: Ext.String.format(
+                                "{0} Test Cases were found, but only 2000 are shown.",
+                                store.totalCount)
+                        });
+                    }
+
+                    this.add({
+                        xtype: 'rallygrid',
+                        store: store,
+                        itemId: 'grouped-grid',
+                        margin: 10,
+                        pageSize: 2000,
+                        columnCfgs: this._getColumnCfgs(),
+                        features: [{
+                            ftype: 'grouping'
+                        }],
+
+                    });
+                },
+
+                _getColumnCfgs: function () {
+                    var artifact_hash = {};
+                    _.each(this.artifactRecords, function (r) {
+                        artifact_hash[r.get('FormattedID')] = r;
+                    });
+
+                    this.logger.log('artifactHash', artifact_hash);
+                    return [{
+                        dataIndex: 'FormattedID',
+                        text: 'ID',
+                        flex: 1
+                    }, {
+                        dataIndex: 'Name',
+                        text: 'Test Case',
+                        flex: 2
+                    }, {
+                        dataIndex: 'WorkProduct',
+                        text: 'Work Item',
+                        renderer: function (v, m, r) {
+
+                            var unknownText = "--";
+                            if (v) {
+                                var rec = artifact_hash[v.FormattedID];
+                                if (rec) {
+                                    return Ext.String.format(
+                                        '<a href="{0}">{1}</a>: {2}', Rally.nav.Manager
+                                        .getDetailUrl(rec), v.FormattedID, rec.get(
+                                            'Name'));
+                                }
+                            }
+
+                            if (r.get('Summary') && r.get('Summary').TestSets) {
+
+                                var fids = _.keys(r.get('Summary').TestSets.FormattedID),
+                                    testSets = [];
+
+                                for (var i = 0; i < fids.length; i++) {
+                                    if (artifact_hash[fids[i]]) {
+                                        testSets.push(Ext.String.format(
+                                            '<a href="{0}">{1}</a>: {2}', Rally
+                                            .nav.Manager.getDetailUrl(
+                                                artifact_hash[fids[i]]), fids[i],
+                                            artifact_hash[fids[i]].get('Name')));
+                                    }
+                                }
+                                if (testSets.length > 0) {
+                                    return testSets.join('<br/>');
+                                }
+                            }
+                            return unknownText;
+                        },
+                        flex: 2
+                    }, {
+                        dataIndex: 'LastRun',
+                        text: 'Last Tested',
+                        flex: 1
+                    }, {
+                        dataIndex: 'Owner',
+                        text: 'Owner',
+                        renderer: function (v, m, r) {
+                            return (v && (v.FirstName || '') + ' ' + (v.LastName || '')) ||
+                                '(No Owner)';
+                        },
+                        flex: 1
+                    }];
+                },
+
+                _export: function () {
+                    var file_util = Ext.create('Rally.technicalservices.FileUtilities', {});
+
+                    file_util.getCSVFromGrid(this, this.down('rallygrid'), this._getExportColumnCfgs())
+                        .then({
+                            success: function (csv) {
+                                this.setLoading(false);
+                                file_util.saveCSVToFile(csv, 'export.csv');
+                            },
+                            scope: this
+                        });
+                },
+
+                _getExportColumnCfgs: function () {
+                    var artifact_hash = {},
+                        releaseName = this.getReleaseTimeboxRecord().get('Name');
+
+                    _.each(this.artifactRecords, function (r) {
+                        artifact_hash[r.get('FormattedID')] = r;
+                    });
+
+                    this.logger.log('artifactHash', artifact_hash);
+                    return [{
+                        dataIndex: 'LastVerdict',
+                        text: 'Last Verdict'
+                    }, {
+                        dataIndex: 'FormattedID',
+                        text: 'ID'
+                    }, {
+                        dataIndex: 'Name',
+                        text: 'Test Case'
+                    }, {
+                        dataIndex: 'WorkProduct',
+                        text: 'Work Item ID',
+                        renderer: function (v, m, r) {
+
+                            var unknownText = "--";
+                            if (v && artifact_hash[v.FormattedID]) {
+                                return v.FormattedID;
+                            }
+
+                            if (r.get('Summary') && r.get('Summary').TestSets) {
+
+                                var fids = _.keys(r.get('Summary').TestSets.FormattedID),
+                                    testSets = [];
+
+                                for (var i = 0; i < fids.length; i++) {
+                                    if (artifact_hash[fids[i]]) {
+                                        testSets.push(fids[i]);
+                                    }
+                                }
+                                if (testSets.length > 0) {
+                                    return testSets.join(',');
+                                }
+                            }
+                            return unknownText;
+                        }
+                    }, {
+                        dataIndex: 'WorkProduct',
+                        text: 'Work Item Name',
+                        renderer: function (v, m, r) {
+
+                            var unknownText = "--";
+                            if (v) {
+                                var rec = artifact_hash[v.FormattedID];
+                                if (rec) {
+                                    return rec.get('Name');
+                                }
+                            }
+
+                            if (r.get('Summary') && r.get('Summary').TestSets) {
+
+                                var fids = _.keys(r.get('Summary').TestSets.FormattedID),
+                                    testSets = [];
+
+                                for (var i = 0; i < fids.length; i++) {
+                                    if (artifact_hash[fids[i]]) {
+                                        testSets.push(artifact_hash[fids[i]].get('Name'));
+                                    }
+                                }
+                                if (testSets.length > 0) {
+                                    return testSets.join(',');
+                                }
+                            }
+                            return unknownText;
+                        }
+                    }, {
+                        dataIndex: 'LastRun',
+                        text: 'Last Tested'
+                    }, {
+                        dataIndex: 'Owner',
+                        text: 'Owner',
+                        renderer: function (v, m, r) {
+                            return (v && (v.FirstName || '') + ' ' + (v.LastName || '')) ||
+                                '(No Owner)';
+                        }
+                    }, {
+                        dataIndex: 'Project',
+                        text: 'Project',
+                        renderer: function (v, m, r) {
+                            return v && v.Name || '';
+                        }
+                    }, {
+                        dataIndex: 'Release',
+                        text: 'Release Name',
+                        renderer: function (v, m, r) {
+                            return releaseName;
+                        }
+                    }, {
+                        dataIndex: 'LastBuild',
+                        text: 'Last Build'
+                    }, {
+                        dataIndex: 'Method',
+                        text: 'Method'
+                    }];
+                },
+
+                getOptions: function () {
+                    return [{
+                        text: 'About...',
+                        handler: this._launchInfo,
+                        scope: this
+                    }];
+                },
+
+                _launchInfo: function () {
+                    if (this.about_dialog) {
+                        this.about_dialog.destroy();
+                    }
+                    this.about_dialog = Ext.create('Rally.technicalservices.InfoLink', {});
+                },
+
+                isExternal: function () {
+                    return typeof (this.getAppId()) == 'undefined';
+                },
+
+                //onSettingsUpdate:  Override
+                onSettingsUpdate: function (settings) {
+                    this.logger.log('onSettingsUpdate', settings);
+                    // Ext.apply(this, settings);
+                    this.launch();
+                }
+            });
+
+            Rally.launchApp('last-verdict-by-iteration', {
+                name: 'Last Verdict By Iteration'
+            });
+        });
+    </script>
+
+    <style type="text/css">
+        .app {}
+
+        .tsinfolink {
+            position: absolute;
+            right: 0px;
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            text-align: center;
+            color: white;
+            background: #C0C0C0;
+            border-style: solid;
+            border-width: 1px;
+            margin-top: 25px;
+            margin-right: 5px;
+            cursor: pointer;
+        }
+    </style>
+
+</head>
+
+<body></body>
+
+</html>

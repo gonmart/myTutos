@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MyDashboard</title>
+
+    <script type="text/javascript" src="https://rally1.rallydev.com/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+                Ext.define("CustomApp",{extend:"Rally.app.App",componentCls:"app",launch:function(){Ext.create("Ext.Button",{text:"Dynamic Handler Button",renderTo:Ext.getBody(),handler:function(){this.clickCount?(this.clickCount++,alert('You have clicked the button "'+this.clickCount+'" times.\n\nTry clicking it again..')):(this.clickCount=1,alert("You just clicked the button for the first time!\n\nTry pressing it again.."))}})}});
+
+            Rally.launchApp('CustomApp', {
+                name:"MyDashboard",
+                parentRepos:"",
+                version:"0.1.1"
+            });
+
+        });
+    </script>
+
+
+    <style type="text/css">
+        
+    </style>
+</head>
+<body>
+</body>
+</html>

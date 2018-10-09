@@ -2,7 +2,7 @@
 <html>
 
 <head>
-    <title>Iteration Progress Summary v1.1 (Status Field)</title>
+    <title>Iteration Progress Summary v1.2 (Status Field)</title>
     <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
     <script type="text/javascript">
         Rally.onReady(function () {
@@ -233,17 +233,17 @@
                     //ITERATION INFORMATION
                     //Iteration Planned Velocity
                     data.push({
-                        state: 'Iteration Planned Velocity',
+                        state: 'Planned Velocity (Capacity)',
                         count: '--',
                         points: !_.isNull(iterInfo.PlannedVelocity) ? iterInfo.PlannedVelocity : '--'
                     });
                     
-                    /*//Iteration Plan Estimate
+                    //Iteration Plan Estimate
                     data.push({
-                        state: 'Iteration Plan Estimate',
+                        state: 'Points Committed',
                         count: '--',
-                        points: !_.isNull(iterInfo.PlanEstimate) ? iterInfo.PlanEstimate : '--'
-                    });*/
+                        points: !_.isNull(iterInfo.c_PointsCommitted) ? iterInfo.c_PointsCommitted : '--'
+                    });
 
                     //END ITERATION INFORMATION
 

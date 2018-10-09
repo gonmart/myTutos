@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MyDashboard</title>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+                Ext.define('CustomApp', {
+    extend: 'Rally.app.App',
+    componentCls: 'app',
+
+    launch: function() {
+        //Write app code here
+        
+
+        Ext.create('Ext.Button', {
+            text    : 'Dynamic Handler Button',
+            renderTo: Ext.getBody(),
+            handler : function() {
+                // this button will spit out a different number every time you click it.
+                // so firstly we must check if that number is already set:
+                if (this.clickCount) {
+                    // looks like the property is already set, so lets just add 1 to that number and alert the user
+                    this.clickCount++;
+                    alert('You have clicked the button "' + this.clickCount + '" times.\n\nTry clicking it again..');
+                } else {
+                    // if the clickCount property is not set, we will set it and alert the user
+                    this.clickCount = 1;
+                    alert('You just clicked the button for the first time!\n\nTry pressing it again..');
+                }
+            }
+        });
+        //API Docs: https://help.rallydev.com/apps/2.1/doc/
+    },
+
+
+});
+
+
+            Rally.launchApp('CustomApp', {
+                name:"MyDashboard",
+                parentRepos:"",
+                version:"0.1.1"
+            });
+
+        });
+    </script>
+
+
+
+    <style type="text/css">
+        .app {
+  /* Add app styles here */
+}
+
+    </style>
+</head>
+<body>
+</body>
+</html>
