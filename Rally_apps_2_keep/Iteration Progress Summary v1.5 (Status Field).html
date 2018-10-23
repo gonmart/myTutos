@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Iteration Progress Summary v1.5 (Status Field)</title>
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+    <script type="text/javascript">
+        Rally.onReady(function () {
+            
+            Ext.define('CustomApp', {
+                extend: 'Rally.app.TimeboxScopedApp',
+                componentCls: "app",
+                scopeType: 'iteration',
+                
+                fetch: ['FormattedID', 'Name', 'ScheduleState', 'PlanEstimate', 'Feature', 'Iteration','Release', 'Blocked', 'Owner', 'c_Status','c_AcceptanceCriteria','Description'],
+                states: ['To-Do', 'Development', 'Code Review', 'QA/SDET', 'SDET Review', 'UAT','Ready for Acceptance', 'Accepted', 'Deployed'],
+                stateField: 'c_Status',
+
+                onScopeChange: function (timeboxScope) {
+                    this.removeAll();         
+
+                    Ext.create('Rally.data.wsapi.artifact.Store', {
+                        models: ['userstory', 'defect'],
+                        autoLoad: true,
+                        fetch: ['FormattedID', 'Name', 'ScheduleState', 'PlanEstimate', 'Feature', 'Iteration','Release', 'Blocked', 'Owner', 'c_Status','c_AcceptanceCriteria','Description'],
+                        filters: timeboxScope.getQueryFilter(),
+                        limit: Infinity,
+                        listeners: {
+                            load: this._onLoad,
+                            scope: this
+                        }
+                    });
+
+                },
+
+                _onLoad: function (store, records) {                 
+                    
+                    var summaryMunger = Ext.create('Rally.technicalservices.StorySummary', {});                    
+                    var iterationInfo = this.getContext().getTimeboxScope().record.data;                    
+
+                    headerInfo = summaryMunger._getHeadersData(records, iterationInfo);
+                    stateData = summaryMunger._getStateSummaryData(this.states, records); 
+                    issuesData = summaryMunger._getIssuesSummaryData(records);
+                    
+                    
+                    this.add({
+                       xtype: 'container', 
+                       html: '',
+                       itemId: 'display_box'
+                       });
+                    
+                    this.down('#display_box').removeAll();
+
+                    this.addTable(headerInfo, summaryMunger.getHeadersColumnCfgs());
+                    this.addTable(stateData, summaryMunger.getStateColumnCfgs());
+                    this.addTable(issuesData, summaryMunger.getIssueColumnCfgs());
+                },
+
+                addTable: function (stateData, columnCfgs) {
+                    
+                    var grid = Ext.create('Rally.ui.grid.Grid', {
+                        store: Ext.create('Rally.data.custom.Store', {
+                            data: stateData
+                        }),
+                        columnCfgs: columnCfgs,
+                        showPagingToolbar: false,
+                        padding: 15,
+                        enableEditing: false,
+                        enableBulkEdit: false
+                    });
+                   
+                    this.down('#display_box').add(grid);
+                }
+
+            });
+
+            Ext.define('Rally.technicalservices.StorySummary', {
+                issues: [{
+                    type: 'noFeature',
+                    displayName: 'Stories Missing Features',
+                    pointsFn: function (record) {
+
+                        if (!record.get('Feature') && record.get('_type') != 'defect') {
+                            return record.get('PlanEstimate') || 0;
+                        }
+                        return 0;
+                    },
+                    countFn: function (record) {
+                        if (!record.get('Feature') && record.get('_type') != 'defect') {
+                            return 1;
+                        }
+                        return 0;
+                    }
+                },{
+                    type: 'noParent',
+                    displayName: 'Defects Missing Parent',
+                    pointsFn: function (record) {
+
+                        if (!record.get('Parent') && record.get('_type') === 'defect') {
+                            return record.get('PlanEstimate') || 0;
+                        }
+                        return 0;
+                    },
+                    countFn: function (record) {
+                        if (!record.get('Parent') && record.get('_type') === 'defect') {
+                            return 1;
+                        }
+                        return 0;
+                    }
+                },{
+                    type: 'noPlanEstimate',
+                    displayName: 'Unestimated Stories',
+                    countFn: function (record) {
+                        if (record.get('PlanEstimate') === 0 || record.get('PlanEstimate') >
+                            0) {
+                            return 0;
+                        }
+                        return 1;
+                    }
+                }, {
+                    type: 'blockedStories',
+                    displayName: 'Blocked Stories',
+                    countFn: function (record) {
+                        if (record.get('Blocked') && record.get('Blocked') === true) {
+                            return 1;
+                        }
+                        return 0;
+                    },
+                    pointsFn: function (record) {
+                        if (record.get('Blocked') && record.get('Blocked') === true) {
+                            return record.get('PlanEstimate') || 0;
+                        }
+                        return 0;
+                    }
+                }, /*{  MOVED TO TOP OF LIST
+                    type: 'splitStories',
+                    displayName: 'Carry Over Stories',
+                    countFn: function (record) {
+                        var regex = new RegExp("^\\[Continued\\]", "i");                           
+                        if (regex.test(record.get('Name'))) {
+                            return 1;
+                        }
+                        return 0;
+                    },
+                    pointsFn: function (record) {
+                        var regex = new RegExp("^\\[Continued\\]", "i");
+                        if (regex.test(record.get('Name'))) {
+                            return record.get('PlanEstimate') || 0;
+                        }
+                        return 0;
+                    }
+                }, */{
+                    type: 'missingRelease',
+                    displayName: 'Missing Release',
+                    countFn: function (record) {
+                        if (!record.get('Release')) {
+                            return 1;
+                        }
+                        return 0;
+                    },
+                    pointsFn: function (record) {
+                        if (!record.get('Release')) {
+                            return record.get('PlanEstimate') || 0;
+                        }
+                        return 0;
+                    }
+                }, {
+                    type: 'missingOwner',
+                    displayName: 'Missing Owner',
+                    countFn: function (record) {
+                        if (!record.get('Owner') || !record.get('Owner')._refObjectName ||
+                            record.get('Owner')._refObjectName.length === 0) {
+                            return 1;
+                        }
+                        return 0;
+                    },
+                    pointsFn: function (record) {
+                        if (!record.get('Owner') || !record.get('Owner')._refObjectName ||
+                            record.get('Owner')._refObjectName.length === 0) {
+                            return record.get('PlanEstimate') || 0;
+                        }
+                        return 0;
+                    }
+                },{
+                    type: 'missingDescriptionAcceptaceCriteria',
+                    displayName: 'Missing Description or Acceptance Criteria',
+                    countFn: function (record) {
+                        
+                        if (record.get('_type') != 'defect'){
+                            if (record.get('Description').length === 0 || record.get('c_AcceptanceCriteria').length === 0) {                                
+                                return 1;
+                            }
+                            return 0;
+                        } else {
+                            if (record.get('Description').length === 0) {
+                                return 1;
+                            }
+                            return 0;
+                        }
+                    },
+                    pointsFn: function (record) {
+                        if (record.get('_type') != 'defect'){
+                            if (record.get('Description').length === 0 || record.get('c_AcceptanceCriteria').length === 0) {
+                                return record.get('PlanEstimate') || 0;
+                            }
+                            return 0;
+                        } else {
+                            if (record.get('Description').length === 0) {
+                                return record.get('PlanEstimate') || 0;
+                            }
+                            return 0;
+                        }                        
+                    }
+                }],
+
+                //New Section
+                getHeadersColumnCfgs: function() {
+                    return [{
+                        dataIndex: 'state',
+                        text: 'Iteration Information',
+                        flex: 1
+                    },{
+                        dataIndex: 'count',
+                        text: 'Story Count'
+                    },{
+                        dataIndex: 'points',
+                        text: 'Total Points'
+                    }];
+                },
+
+
+                getStateColumnCfgs: function () {
+                    return [{
+                        dataIndex: 'state',
+                        text: 'Status',
+                        flex: 1
+                    }, {
+                        dataIndex: 'count',
+                        text: 'Story Count'
+                    }, {
+                        dataIndex: 'defectCount',    //v1.5
+                        text: 'Defect Count'         //v1.5
+                    },{
+                        dataIndex: 'points',
+                        text: 'Total Points'
+                    }];
+                },
+
+                getIssueColumnCfgs: function () {
+                    return [{
+                        dataIndex: 'issueName',
+                        text: 'Potential Issue List',
+                        flex: 1
+                    }, {
+                        dataIndex: 'count',
+                        text: 'Count'
+                    }, {
+                        dataIndex: 'points',
+                        text: 'Points'
+                    }];
+                },
+
+                _initializeSummary: function (types) {
+                    var summary = {};
+                    _.each(types, function (t) {
+                        summary[t] = {
+                            points: 0,
+                            count: 0,
+                            defectCount: 0    //v1.5
+                        };
+                    });
+                    return summary;
+                },
+
+
+                _getHeadersData: function(records, iterInfo) {
+
+                    var data = [],
+                    totalCount = 0,
+                    totalPoints = 0;
+
+                    //ITERATION INFORMATION
+                    //Iteration Planned Velocity
+                    data.push({
+                        state: 'Planned Velocity (Capacity)',
+                        count: '--',
+                        points: !_.isNull(iterInfo.PlannedVelocity) ? iterInfo.PlannedVelocity : '--'
+                    });
+                    
+                    //Iteration Plan Estimate
+                    data.push({
+                        state: 'Points Committed',
+                        count: '--',
+                        points: !_.isNull(iterInfo.c_PointsCommitted) ? iterInfo.c_PointsCommitted : '--'
+                    });
+
+                    //END ITERATION INFORMATION
+
+                    //CALCULATE CARRYOVER AND NOT CARRYOVER WORK
+
+                    var newWorkCount = 0;
+                    var newWorkPlanEstimate = 0;
+                    var CarryOverCount = 0;
+                    var CarryOverPlanEstimate = 0;
+                    var defectCount = 0;
+                    var defectPlanEstimate = 0;
+
+                    _.each(records, function(actual) {
+                        totalCount++;
+                        totalPoints += actual.get('PlanEstimate') || 0;
+        
+
+                        if(actual.get('_type') === 'defect'){
+                            defectCount++;
+                            defectPlanEstimate = defectPlanEstimate + actual.get('PlanEstimate') || 0;
+                        }
+
+                        var regex = new RegExp("^\\[Continued\\]", "i");                        
+                        if (regex.test(actual.get('Name'))) {
+                            CarryOverCount++;
+                            CarryOverPlanEstimate = CarryOverPlanEstimate + actual.get('PlanEstimate') || 0;
+                        } else {
+                            newWorkCount++;
+                            newWorkPlanEstimate = newWorkPlanEstimate + actual.get('PlanEstimate') || 0;
+                        }                       
+
+                    });
+
+                    //New Stories
+                    data.push({
+                        state: 'New Stories Planned',
+                        count: !_.isNull(newWorkCount) ? newWorkCount: '--',
+                        points: !_.isNull(newWorkPlanEstimate) ? newWorkPlanEstimate : '--'
+                    });
+
+                    //Carry Over Stories
+                    data.push({
+                        state: 'Carry Over Stories',
+                        count: !_.isNull(CarryOverCount) ? CarryOverCount: '--',
+                        points: !_.isNull(CarryOverPlanEstimate) ? CarryOverPlanEstimate : '--'
+                    });
+
+                    //here for defect's count code
+                    data.push({
+                        state: 'Defects in Iteration',
+                        count: defectCount,
+                        points: defectPlanEstimate
+                    });
+                    //end of defect's count code
+
+                    data.push({
+                        state: 'Total in Sprint',
+                        count: totalCount,
+                        points: totalPoints
+                    });
+
+                    return data;
+
+                },
+
+                _getStateSummaryData: function (states, records){
+                    var stateSummary = this._initializeSummary(states),
+                        totalCount = 0,
+                        totalDefectCount = 0,   //v1.5
+                        totalPoints = 0,
+                        acceptedCount = 0,
+                        acceptedDefectCount = 0,  //v1.5
+                        acceptedPoints = 0,
+                        acceptedStates = ['Accepted','Deployed'];
+
+                    _.each(records, function (r) {
+                        var ss = r.get('c_Status'),
+                            itemType = r.get('_type'),   //v1.5
+                            planEstimate = r.get('PlanEstimate') || 0;
+
+                        if (stateSummary[ss]) {
+                            if(itemType != 'defect') {   //v1.5
+                                stateSummary[ss].count++;
+                            } else {   //v1.5
+                                stateSummary[ss].defectCount++;   //v1.5
+                            }
+                            stateSummary[ss].points = stateSummary[ss].points +
+                                planEstimate;
+                        }
+
+
+                        if(itemType != 'defect') {    //v1.5
+                            totalCount++;
+                        } else {    //v1.5
+                            totalDefectCount++;   //v1.5
+                        }
+
+                        totalPoints += planEstimate;
+
+                        if (Ext.Array.contains(acceptedStates, ss)) {
+                            if(itemType != 'defect') {    //v1.5
+                                acceptedCount++;
+                            } else {    //v1.5
+                                acceptedDefectCount++;   //v1.5
+                            }
+                            acceptedPoints += planEstimate;
+                        }
+                    });                
+
+                    var data = _.map(states, function (s) {
+                        return {
+                            state: s,
+                            count: stateSummary[s].count || 0,
+                            defectCount: stateSummary[s].defectCount || 0,    //v1.5
+                            points: stateSummary[s].points || 0
+                        };
+                    });
+                    
+                    var acceptedCountPct = acceptedCount / totalCount * 100,
+                        acceptedDefectCountPct = acceptedDefectCount / totalDefectCount * 100,    //v1.5
+                        acceptedPointsPct = acceptedPoints / totalPoints * 100;
+
+                    data.push({
+                        state: '% Accepted + %Deployed',
+                        count: !isNaN(acceptedCountPct) ? acceptedCountPct.toFixed(1) + " %" : "NaN",
+                        defectCount: !isNaN(acceptedDefectCountPct) ? acceptedDefectCountPct.toFixed(1) + " %" : "NaN",    //v1.5
+                        points: !isNaN(acceptedPointsPct) ? acceptedPointsPct.toFixed(1) + " %" : "NaN"
+                    });
+
+                    data.push({
+                        state: 'Total in Sprint',
+                        count: totalCount,
+                        defectCount: totalDefectCount,   //v1.5
+                        points: totalPoints
+                    });
+
+                    return data;
+                },
+
+                _getIssuesSummaryData: function (records) {
+                    var data = [];
+
+                    _.each(this.issues, function (issue) {
+                        var row = {
+                            type: issue.type,
+                            issueName: issue.displayName,
+                            count: 0,
+                            points: 0
+                        };
+                        _.each(records, function (r) {
+                            if (issue.countFn) {
+                                row.count += issue.countFn(r);
+                            }
+                            if (issue.pointsFn) {
+                                row.points += issue.pointsFn(r);
+                            } else {
+                                row.points = '--';
+                            }
+                        });
+                        data.push(row);
+                    });
+                    return data;
+                }
+            });
+
+
+            Rally.launchApp('CustomApp', {
+                name: "Custom App",
+                parentRepos: ""
+            });
+
+        });
+    </script>
+
+    <style type="text/css">
+        .app {
+            /* Add app styles here */
+        }
+        .tsinfolink {
+            position: absolute;
+            right: 0px;
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            text-align: center;
+            color: white;
+            background: #C0C0C0;
+            border-style: solid;
+            border-width: 1px;
+            margin-top: 25px;
+            margin-right: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+</body>
+
+</html>
