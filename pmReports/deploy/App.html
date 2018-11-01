@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>pmReport1</title>
+
+    <script type="text/javascript" src="/apps/2.1/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+                Ext.define("CustomApp",{extend:"Rally.app.TimeboxScopedApp",componentCls:"app",scopeType:"release",onScopeChange:function(e){Ext.create("Rally.data.wsapi.artifact.Store",{models:["PortfolioItem/Feature"],autoLoad:!0,fetch:["FormattedID","Name","Parent","Project","Owner","PreliminaryEstimateValue","RefinedEstimate","c_FundingType"],filters:e.getQueryFilter(),limit:1/0,listeners:{load:this._onLoadingData,scope:this},groupField:"Project",getGroupString:function(e){return e.get("Parent")?e.get("Parent").FormattedID+" - "+e.get("Parent").Name:"None"}})},launch:function(){this.add([{xtype:"container",itemId:"display_box"}]),this.callParent(arguments)},_onLoadingData:function(e,t){var a=this.getContext().getTimeboxScope().record.data,n=e.getGroups(),i=this._getInitiativeData(n,a);this.down("#display_box").removeAll(),this._addTable(i,this._getHeadersColumnCfgs())},_addTable:function(e,t){var a=Ext.create("Rally.ui.grid.Grid",{store:Ext.create("Rally.data.custom.Store",{data:e,sorters:[{sorterFn:function(e,t){return e.data.loe<t.data.loe?-1:e.data.loe>t.data.loe?1:0},direction:"desc"}]}),columnCfgs:t,showPagingToolbar:!1,padding:15,enableEditing:!1,enableBulkEdit:!1});this.down("#display_box").add(a)},_getInitiativeData:function(e,t){var a=[],n=0,i=0,o=0,r=0;return _.each(e,function(e){var t={initiatives:e.name?e.name:"No Name",owner:0,loe:0,capex:0,opex:0,undefined:0};i=0,o=0,r=0,n=0,_.each(e.children,function(e){t.owner=e.get("Parent")&&e.get("Parent").Owner?e.get("Parent").Owner._refObjectName:"","CapEx"===e.get("c_FundingType")?i+=e.get("RefinedEstimate")||e.get("PreliminaryEstimateValue"):"Opex"===e.get("c_FundingType")?o+=e.get("RefinedEstimate")||e.get("PreliminaryEstimateValue"):r+=e.get("RefinedEstimate")||e.get("PreliminaryEstimateValue"),n+=e.get("RefinedEstimate")||e.get("PreliminaryEstimateValue")}),t.loe=n||0,t.capex=i||0,t.opex=o||0,t.undefined=r||0,a.push(t)}),a},_getHeadersColumnCfgs:function(){return[{dataIndex:"initiatives",text:"Initiatives",flex:1},{dataIndex:"owner",text:"Owner"},{dataIndex:"loe",text:"LOE"},{dataIndex:"capex",text:"CapEx"},{dataIndex:"opex",text:"OpEx"},{dataIndex:"undefined",text:"Undefined"}]}});
+
+            Rally.launchApp('CustomApp', {
+                name:"pmReport1",
+                parentRepos:"",
+                version:"0.1.1"
+            });
+
+        });
+    </script>
+
+
+    <style type="text/css">
+        
+    </style>
+</head>
+<body>
+</body>
+</html>

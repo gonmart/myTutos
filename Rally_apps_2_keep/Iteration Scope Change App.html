@@ -1,0 +1,1594 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Iteration Scope Change</title>
+    <!--  (c) 2015 Rally Software Development Corp.  All Rights Reserved. -->
+    <!--  Build Date: Mon Oct 03 2016 12:56:17 GMT-0600 (MDT) -->
+    
+    <script type="text/javascript">
+        var APP_BUILD_DATE = "Mon Oct 03 2016 12:56:17 GMT-0600 (MDT)";
+        var CHECKSUM = 51980729391;
+    </script>
+    
+    <script type="text/javascript" src="/apps/2.0/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function() {
+             
+/* Blob.js
+ * A Blob implementation.
+ * 2014-05-31
+ * 
+ * By Eli Grey, http://eligrey.com
+ * By Devin Samarin, https://github.com/eboyjr
+ * License: X11/MIT
+ *   See https://github.com/eligrey/Blob.js/blob/master/LICENSE.md
+ */
+
+/*global self, unescape */
+/*jslint bitwise: true, regexp: true, confusion: true, es5: true, vars: true, white: true,
+  plusplus: true */
+
+/*! @source http://purl.eligrey.com/github/Blob.js/blob/master/Blob.js */
+
+(function (view) {
+    "use strict";
+
+    view.URL = view.URL || view.webkitURL;
+
+    if (view.Blob && view.URL) {
+        try {
+            new Blob;
+            return;
+        } catch (e) {}
+    }
+
+    // Internally we use a BlobBuilder implementation to base Blob off of
+    // in order to support older browsers that only have BlobBuilder
+    var BlobBuilder = view.BlobBuilder || view.WebKitBlobBuilder || view.MozBlobBuilder || (function(view) {
+        var
+              get_class = function(object) {
+                return Object.prototype.toString.call(object).match(/^\[object\s(.*)\]$/)[1];
+            }
+            , FakeBlobBuilder = function BlobBuilder() {
+                this.data = [];
+            }
+            , FakeBlob = function Blob(data, type, encoding) {
+                this.data = data;
+                this.size = data.length;
+                this.type = type;
+                this.encoding = encoding;
+            }
+            , FBB_proto = FakeBlobBuilder.prototype
+            , FB_proto = FakeBlob.prototype
+            , FileReaderSync = view.FileReaderSync
+            , FileException = function(type) {
+                this.code = this[this.name = type];
+            }
+            , file_ex_codes = (
+                  "NOT_FOUND_ERR SECURITY_ERR ABORT_ERR NOT_READABLE_ERR ENCODING_ERR "
+                + "NO_MODIFICATION_ALLOWED_ERR INVALID_STATE_ERR SYNTAX_ERR"
+            ).split(" ")
+            , file_ex_code = file_ex_codes.length
+            , real_URL = view.URL || view.webkitURL || view
+            , real_create_object_URL = real_URL.createObjectURL
+            , real_revoke_object_URL = real_URL.revokeObjectURL
+            , URL = real_URL
+            , btoa = view.btoa
+            , atob = view.atob
+            
+            , ArrayBuffer = view.ArrayBuffer
+            , Uint8Array = view.Uint8Array
+        ;
+        FakeBlob.fake = FB_proto.fake = true;
+        while (file_ex_code--) {
+            FileException.prototype[file_ex_codes[file_ex_code]] = file_ex_code + 1;
+        }
+        if (!real_URL.createObjectURL) {
+            URL = view.URL = {};
+        }
+        URL.createObjectURL = function(blob) {
+            var
+                  type = blob.type
+                , data_URI_header
+            ;
+            if (type === null) {
+                type = "application/octet-stream";
+            }
+            if (blob instanceof FakeBlob) {
+                data_URI_header = "data:" + type;
+                if (blob.encoding === "base64") {
+                    return data_URI_header + ";base64," + blob.data;
+                } else if (blob.encoding === "URI") {
+                    return data_URI_header + "," + decodeURIComponent(blob.data);
+                } if (btoa) {
+                    return data_URI_header + ";base64," + btoa(blob.data);
+                } else {
+                    return data_URI_header + "," + encodeURIComponent(blob.data);
+                }
+            } else if (real_create_object_URL) {
+                return real_create_object_URL.call(real_URL, blob);
+            }
+        };
+        URL.revokeObjectURL = function(object_URL) {
+            if (object_URL.substring(0, 5) !== "data:" && real_revoke_object_URL) {
+                real_revoke_object_URL.call(real_URL, object_URL);
+            }
+        };
+        FBB_proto.append = function(data/*, endings*/) {
+            var bb = this.data;
+            // decode data to a binary string
+            if (Uint8Array && (data instanceof ArrayBuffer || data instanceof Uint8Array)) {
+                var
+                      str = ""
+                    , buf = new Uint8Array(data)
+                    , i = 0
+                    , buf_len = buf.length
+                ;
+                for (; i < buf_len; i++) {
+                    str += String.fromCharCode(buf[i]);
+                }
+                bb.push(str);
+            } else if (get_class(data) === "Blob" || get_class(data) === "File") {
+                if (FileReaderSync) {
+                    var fr = new FileReaderSync;
+                    bb.push(fr.readAsBinaryString(data));
+                } else {
+                    // async FileReader won't work as BlobBuilder is sync
+                    throw new FileException("NOT_READABLE_ERR");
+                }
+            } else if (data instanceof FakeBlob) {
+                if (data.encoding === "base64" && atob) {
+                    bb.push(atob(data.data));
+                } else if (data.encoding === "URI") {
+                    bb.push(decodeURIComponent(data.data));
+                } else if (data.encoding === "raw") {
+                    bb.push(data.data);
+                }
+            } else {
+                if (typeof data !== "string") {
+                    data += ""; // convert unsupported types to strings
+                }
+                // decode UTF-16 to binary string
+                bb.push(unescape(encodeURIComponent(data)));
+            }
+        };
+        FBB_proto.getBlob = function(type) {
+            if (!arguments.length) {
+                type = null;
+            }
+            return new FakeBlob(this.data.join(""), type, "raw");
+        };
+        FBB_proto.toString = function() {
+            return "[object BlobBuilder]";
+        };
+        FB_proto.slice = function(start, end, type) {
+            var args = arguments.length;
+            if (args < 3) {
+                type = null;
+            }
+            return new FakeBlob(
+                  this.data.slice(start, args > 1 ? end : this.data.length)
+                , type
+                , this.encoding
+            );
+        };
+        FB_proto.toString = function() {
+            return "[object Blob]";
+        };
+        FB_proto.close = function() {
+            this.size = 0;
+            delete this.data;
+        };
+        return FakeBlobBuilder;
+    }(view));
+
+    view.Blob = function Blob(blobParts, options) {
+        var type = options ? (options.type || "") : "";
+        var builder = new BlobBuilder();
+        if (blobParts) {
+            for (var i = 0, len = blobParts.length; i < len; i++) {
+                builder.append(blobParts[i]);
+            }
+        }
+        return builder.getBlob(type);
+    };
+}(typeof self !== "undefined" && self || typeof window !== "undefined" && window || this.content || this));
+/* FileSaver.js
+ *  A saveAs() FileSaver implementation.
+ *  2014-05-27
+ *
+ *  By Eli Grey, http://eligrey.com
+ *  License: X11/MIT
+ *    See https://github.com/eligrey/FileSaver.js/blob/master/LICENSE.md
+ */
+
+/*global self */
+/*jslint bitwise: true, indent: 4, laxbreak: true, laxcomma: true, smarttabs: true, plusplus: true */
+
+/*! @source http://purl.eligrey.com/github/FileSaver.js/blob/master/FileSaver.js */
+
+var saveAs = saveAs
+  // IE 10+ (native saveAs)
+  || (typeof navigator !== "undefined" &&
+      navigator.msSaveOrOpenBlob && navigator.msSaveOrOpenBlob.bind(navigator))
+  // Everyone else
+  || (function(view) {
+    "use strict";
+    // IE <10 is explicitly unsupported
+    if (typeof navigator !== "undefined" &&
+        /MSIE [1-9]\./.test(navigator.userAgent)) {
+        return;
+    }
+    var
+          doc = view.document
+          // only get URL when necessary in case Blob.js hasn't overridden it yet
+        , get_URL = function() {
+            return view.URL || view.webkitURL || view;
+        }
+        , save_link = doc.createElementNS("http://www.w3.org/1999/xhtml", "a")
+        , can_use_save_link = !view.externalHost && "download" in save_link
+        , click = function(node) {
+            var event = doc.createEvent("MouseEvents");
+            event.initMouseEvent(
+                "click", true, false, view, 0, 0, 0, 0, 0
+                , false, false, false, false, 0, null
+            );
+            node.dispatchEvent(event);
+        }
+        , webkit_req_fs = view.webkitRequestFileSystem
+        , req_fs = view.requestFileSystem || webkit_req_fs || view.mozRequestFileSystem
+        , throw_outside = function(ex) {
+            (view.setImmediate || view.setTimeout)(function() {
+                throw ex;
+            }, 0);
+        }
+        , force_saveable_type = "application/octet-stream"
+        , fs_min_size = 0
+        , deletion_queue = []
+        , process_deletion_queue = function() {
+            var i = deletion_queue.length;
+            while (i--) {
+                var file = deletion_queue[i];
+                if (typeof file === "string") { // file is an object URL
+                    get_URL().revokeObjectURL(file);
+                } else { // file is a File
+                    file.remove();
+                }
+            }
+            deletion_queue.length = 0; // clear queue
+        }
+        , dispatch = function(filesaver, event_types, event) {
+            event_types = [].concat(event_types);
+            var i = event_types.length;
+            while (i--) {
+                var listener = filesaver["on" + event_types[i]];
+                if (typeof listener === "function") {
+                    try {
+                        listener.call(filesaver, event || filesaver);
+                    } catch (ex) {
+                        throw_outside(ex);
+                    }
+                }
+            }
+        }
+        , FileSaver = function(blob, name) {
+            // First try a.download, then web filesystem, then object URLs
+            var
+                  filesaver = this
+                , type = blob.type
+                , blob_changed = false
+                , object_url
+                , target_view
+                , get_object_url = function() {
+                    var object_url = get_URL().createObjectURL(blob);
+                    deletion_queue.push(object_url);
+                    return object_url;
+                }
+                , dispatch_all = function() {
+                    dispatch(filesaver, "writestart progress write writeend".split(" "));
+                }
+                // on any filesys errors revert to saving with object URLs
+                , fs_error = function() {
+                    // don't create more object URLs than needed
+                    if (blob_changed || !object_url) {
+                        object_url = get_object_url(blob);
+                    }
+                    if (target_view) {
+                        target_view.location.href = object_url;
+                    } else {
+                        window.open(object_url, "_blank");
+                    }
+                    filesaver.readyState = filesaver.DONE;
+                    dispatch_all();
+                }
+                , abortable = function(func) {
+                    return function() {
+                        if (filesaver.readyState !== filesaver.DONE) {
+                            return func.apply(this, arguments);
+                        }
+                    };
+                }
+                , create_if_not_found = {create: true, exclusive: false}
+                , slice
+            ;
+            filesaver.readyState = filesaver.INIT;
+            if (!name) {
+                name = "download";
+            }
+            if (can_use_save_link) {
+                object_url = get_object_url(blob);
+                save_link.href = object_url;
+                save_link.download = name;
+                click(save_link);
+                filesaver.readyState = filesaver.DONE;
+                dispatch_all();
+                return;
+            }
+            // Object and web filesystem URLs have a problem saving in Google Chrome when
+            // viewed in a tab, so I force save with application/octet-stream
+            // http://code.google.com/p/chromium/issues/detail?id=91158
+            if (view.chrome && type && type !== force_saveable_type) {
+                slice = blob.slice || blob.webkitSlice;
+                blob = slice.call(blob, 0, blob.size, force_saveable_type);
+                blob_changed = true;
+            }
+            // Since I can't be sure that the guessed media type will trigger a download
+            // in WebKit, I append .download to the filename.
+            // https://bugs.webkit.org/show_bug.cgi?id=65440
+            if (webkit_req_fs && name !== "download") {
+                name += ".download";
+            }
+            if (type === force_saveable_type || webkit_req_fs) {
+                target_view = view;
+            }
+            if (!req_fs) {
+                fs_error();
+                return;
+            }
+            fs_min_size += blob.size;
+            req_fs(view.TEMPORARY, fs_min_size, abortable(function(fs) {
+                fs.root.getDirectory("saved", create_if_not_found, abortable(function(dir) {
+                    var save = function() {
+                        dir.getFile(name, create_if_not_found, abortable(function(file) {
+                            file.createWriter(abortable(function(writer) {
+                                writer.onwriteend = function(event) {
+                                    target_view.location.href = file.toURL();
+                                    deletion_queue.push(file);
+                                    filesaver.readyState = filesaver.DONE;
+                                    dispatch(filesaver, "writeend", event);
+                                };
+                                writer.onerror = function() {
+                                    var error = writer.error;
+                                    if (error.code !== error.ABORT_ERR) {
+                                        fs_error();
+                                    }
+                                };
+                                "writestart progress write abort".split(" ").forEach(function(event) {
+                                    writer["on" + event] = filesaver["on" + event];
+                                });
+                                writer.write(blob);
+                                filesaver.abort = function() {
+                                    writer.abort();
+                                    filesaver.readyState = filesaver.DONE;
+                                };
+                                filesaver.readyState = filesaver.WRITING;
+                            }), fs_error);
+                        }), fs_error);
+                    };
+                    dir.getFile(name, {create: false}, abortable(function(file) {
+                        // delete file if it already exists
+                        file.remove();
+                        save();
+                    }), abortable(function(ex) {
+                        if (ex.code === ex.NOT_FOUND_ERR) {
+                            save();
+                        } else {
+                            fs_error();
+                        }
+                    }));
+                }), fs_error);
+            }), fs_error);
+        }
+        , FS_proto = FileSaver.prototype
+        , saveAs = function(blob, name) {
+            return new FileSaver(blob, name);
+        }
+    ;
+    FS_proto.abort = function() {
+        var filesaver = this;
+        filesaver.readyState = filesaver.DONE;
+        dispatch(filesaver, "abort");
+    };
+    FS_proto.readyState = FS_proto.INIT = 0;
+    FS_proto.WRITING = 1;
+    FS_proto.DONE = 2;
+
+    FS_proto.error =
+    FS_proto.onwritestart =
+    FS_proto.onprogress =
+    FS_proto.onwrite =
+    FS_proto.onabort =
+    FS_proto.onerror =
+    FS_proto.onwriteend =
+        null;
+
+    view.addEventListener("unload", process_deletion_queue, false);
+    saveAs.unload = function() {
+        process_deletion_queue();
+        view.removeEventListener("unload", process_deletion_queue, false);
+    };
+    return saveAs;
+}(
+       typeof self !== "undefined" && self
+    || typeof window !== "undefined" && window
+    || this.content
+));
+// `self` is undefined in Firefox for Android content script context
+// while `this` is nsIContentFrameMessageManager
+// with an attribute `content` that corresponds to the window
+
+if (typeof module !== "undefined" && module !== null) {
+  module.exports = saveAs;
+} else if ((typeof define !== "undefined" && define !== null) && (define.amd != null)) {
+  define([], function() {
+    return saveAs;
+  });
+}
+/**
+ * A link that pops up a version dialog box
+ */
+
+Ext.define('Rally.technicalservices.InfoLink',{
+    extend: 'Rally.ui.dialog.Dialog',
+    alias: 'widget.tsinfolink',
+    
+    /**
+     * @cfg {String} informationHtml
+     * Additional text to be displayed on the popup dialog (for exmaple,
+     * to add a description of the app's use or functionality)
+     */
+    informationHtml: null,
+    
+    /**
+     * 
+     * cfg {String} title
+     * The title for the dialog box
+     */
+    title: "Build Information",
+    
+    defaults: { padding: 5, margin: 5 },
+
+    closable: true,
+     
+    draggable: true,
+
+    autoShow: true,
+   
+    width: 350, 
+    
+    initComponent: function() {
+        var id = Ext.id(this);
+        this.title =  "<span class='icon-help'> </span>" + this.title;
+        this.callParent(arguments);
+    },
+    
+    _generateChecksum: function(string){
+        var chk = 0x12345678,
+            i;
+        string = string.replace(/var CHECKSUM = .*;/,"");
+        string = string.replace(/\s/g,"");  //Remove all whitespace from the string.
+        
+        for (i = 0; i < string.length; i++) {
+            chk += (string.charCodeAt(i) * i);
+        }
+    
+        return chk;
+    },
+    
+    _checkChecksum: function(container) {
+        var deferred = Ext.create('Deft.Deferred');
+        console.log("_checkChecksum", container);
+        var me = this;
+        
+        Ext.Ajax.request({
+            url: document.URL,
+            params: {
+                id: 1
+            },
+            success: function (response) {
+                text = response.responseText;
+                if ( CHECKSUM ) {
+                    if ( CHECKSUM !== me._generateChecksum(text) ) {
+                        console.log("Checksums don't match!");
+                        deferred.resolve(false);
+                        return;
+                    }
+                }
+                deferred.resolve(true);
+            }
+        });
+        
+        return deferred.promise;
+    },
+    
+    afterRender: function() {
+        var app = Rally.getApp();
+        
+        if (! app.isExternal() ) {
+                
+            this._checkChecksum(app).then({
+                scope: this,
+                success: function(result){
+                    if ( !result ) {
+                        this.addDocked({
+                            xtype:'container',
+                            cls: 'build-info',
+                            padding: 2,
+                            html:'<span class="icon-warning"> </span>Checksums do not match'
+                        });
+                    }
+                },
+                failure: function(msg){
+                    console.log("oops:",msg);
+                }
+            });
+        } else {
+            this.addDocked({
+                xtype:'container',
+                cls: 'build-info',
+                padding: 2,
+                html:'... Running externally'
+            });
+        }
+        this.callParent(arguments);
+    },
+    
+    beforeRender: function() {
+        var me = this;
+        this.callParent(arguments);
+
+        if (this.informationHtml) {
+            this.addDocked({
+                xtype: 'component',
+                componentCls: 'intro-panel',
+                padding: 2,
+                html: this.informationHtml
+            });
+        }
+        
+        this.addDocked({
+            xtype:'container',
+            cls: 'build-info',
+            padding: 2,
+            html:"This app was created by the Rally Technical Services Team."
+        });
+        
+        if ( APP_BUILD_DATE ) {
+            this.addDocked({
+                xtype:'container',
+                cls: 'build-info',
+                padding: 2,
+                html:'Build date/time: ' + APP_BUILD_DATE
+            });
+        }
+    }
+});
+
+/*
+ */
+Ext.define('Rally.technicalservices.Logger',{
+    constructor: function(config){
+        Ext.apply(this,config);
+    },
+    log: function(args){
+        var timestamp = "[ " + Ext.util.Format.date(new Date(), "Y-m-d H:i:s.u") + " ]";
+        //var output_args = arguments;
+        //output_args.unshift( [ "[ " + timestamp + " ]" ] );
+        //output_args = Ext.Array.push(output_args,arguments);
+        
+        var output_args = [];
+        output_args = Ext.Array.push(output_args,[timestamp]);
+        output_args = Ext.Array.push(output_args, Ext.Array.slice(arguments,0));
+
+        window.console && console.log.apply(console,output_args);
+    }
+
+});
+
+Ext.define('Rally.technicalservices.FileUtilities', {
+    //singleton: true,
+    logger: new Rally.technicalservices.Logger(),
+    saveCSVToFile:function(csv,file_name,type_object){
+            if (type_object == undefined){
+                type_object = {type:'text/csv;charset=utf-8'};
+            }
+            var blob = new Blob([csv],type_object);
+            saveAs(blob,file_name);
+    },
+    saveTextAsFile: function(textToWrite, fileName)
+    {
+        var textFileAsBlob = new Blob([textToWrite], {type:'text/plain'});
+        var fileNameToSaveAs = fileName;
+
+        var downloadLink = document.createElement("a");
+        downloadLink.download = fileNameToSaveAs;
+        downloadLink.innerHTML = "Download File";
+        if (window.webkitURL != null)
+        {
+            // Chrome allows the link to be clicked
+            // without actually adding it to the DOM.
+            downloadLink.href = window.webkitURL.createObjectURL(textFileAsBlob);
+        }
+        else
+        {
+            // Firefox requires the link to be added to the DOM
+            // before it can be clicked.
+            downloadLink.href = window.URL.createObjectURL(textFileAsBlob);
+            downloadLink.onclick = destroyClickedElement;
+            downloadLink.style.display = "none";
+            document.body.appendChild(downloadLink);
+        }
+        downloadLink.click();
+    },
+    destroyClickedElement: function(event)
+    {
+        document.body.removeChild(event.target);
+    },
+    convertDataArrayToCSVText: function(data_array, requestedFieldHash){
+       
+        var text = '';
+        Ext.each(Object.keys(requestedFieldHash), function(key){
+            text += requestedFieldHash[key] + ',';
+        });
+        text = text.replace(/,$/,'\n');
+        
+        Ext.each(data_array, function(d){
+            Ext.each(Object.keys(requestedFieldHash), function(key){
+                if (d[key]){
+                    if (typeof d[key] === 'object'){
+                        if (d[key].FormattedID) {
+                            text += Ext.String.format("\"{0}\",",d[key].FormattedID ); 
+                        } else if (d[key].Name) {
+                            text += Ext.String.format("\"{0}\",",d[key].Name );                    
+                        } else if (!isNaN(Date.parse(d[key]))){
+                            text += Ext.String.format("\"{0}\",",Rally.util.DateTime.formatWithDefaultDateTime(d[key]));
+                        }else {
+                            text += Ext.String.format("\"{0}\",",d[key].toString());
+                        }
+                    } else {
+                        text += Ext.String.format("\"{0}\",",d[key] );                    
+                    }
+                } else {
+                    text += ',';
+                }
+            },this);
+            text = text.replace(/,$/,'\n');
+        },this);
+        return text;
+    },
+     /*
+     * will render using your grid renderer.  If you want it to ignore the grid renderer,
+     * have the column set _csvIgnoreRender: true
+     */
+    getCSVFromData:function(app, grid, exportColumns){
+        var data = grid.getStore().data.items;
+
+        var columns = exportColumns || grid.columns;
+        var column_names = [];
+        var headers = [];
+
+        Ext.Array.each(columns,function(column){
+            if ( column.dataIndex || column.renderer ) {
+                column_names.push(column.dataIndex);
+                if ( column.csvText ) {
+                    headers.push(column.csvText);
+                } else {
+                    headers.push(column.text);
+                }
+            }
+        });
+
+        var csv = [];
+        csv.push('"' + headers.join('","') + '"');
+        _.each(data, function(item){
+
+            var cell_values = [];
+            _.each(columns, function(c){
+                var cell_value = item.get(c.dataIndex);
+                if (c.renderer || c.exportRenderer) {
+                    if (c.exportRenderer){
+                        cell_value = c.exportRenderer(cell_value, {}, item);
+                    } else {
+                        cell_value = c.renderer(cell_value, {}, item);
+                    }
+
+                }
+                cell_values.push(cell_value);
+            });
+            csv.push('"' + cell_values.join('","') + '"');
+        });
+        return csv.join('\r\n');
+    }
+});
+Ext.define("iteration-scope-change-by-project", {
+    extend: 'Rally.app.TimeboxScopedApp',
+    componentCls: 'app',
+    logger: new Rally.technicalservices.Logger(),
+    scopeType: 'iteration',
+
+    config: {
+        defaultSettings: {
+            hoursOffset: 0
+        }
+    },
+
+    onTimeboxScopeChange: function(timebox){
+        this.logger.log('onTimeboxScopeChange', timebox.getQueryFilter().toString());
+        this.getContext().setTimeboxScope(timebox);
+
+        this._addComponents(timebox);
+
+        this._clearData();
+        this._loadMatchingIterations(timebox);
+    },
+    _clearData: function(){
+        this.timeboxParser = null;
+        if (this.down('rallygrid')){
+            this.down('rallygrid').destroy();
+        }
+    },
+
+    _addComponents: function(timebox){
+        this.logger.log('_addComponents', timebox);
+
+        var labelWidth = 100,
+            boxWidth= 150;
+
+        if (!this.down('#header-container')){
+            this.add({
+                xtype: 'container',
+                itemId: 'header-container',
+                layout: {type: 'hbox'},
+                items: [
+                    this._getIterationStatusTemplate(),
+                 //   this._getShowWorkRadioGroupConfig(labelWidth, boxWidth),
+                    this._getOrganizeByType(labelWidth, boxWidth),
+                    {
+                        xtype: 'container',
+                        flex: 2
+                    },{
+                        xtype: 'rallybutton',
+                        text: 'Export',
+                        listeners: {
+                            scope: this,
+                            click: this._export
+                        }
+                    }
+                    ]
+            });
+        }
+
+    },
+    _getIterationStatusTemplate: function(){
+        var iterationTemplate = Ext.create('Rally.technicalservices.IterationStatusTemplate',{});
+        return {
+            xtype: 'container',
+            tpl: iterationTemplate,
+            itemId: 'iterationStatusTemplate',
+            flex: 1,
+            margin: 15
+        };
+    },
+    _getShowWorkRadioGroupConfig: function(labelWidth, boxWidth){
+
+        return {
+            xtype: 'radiogroup',
+            fieldLabel: 'Show Work',
+            columns: 3,
+            itemId: 'selectedShowWorkScope',
+            allowBlank: false,
+            vertical: false,
+            labelWidth: labelWidth,
+            margin: '25 0 10 0',
+            padding: 5,
+            flex: 1,
+            labelAlign: 'right',
+            layout: 'fit',
+            items: [{
+                boxLabel: "All",
+                inputValue: 'all',
+                name: 'showWorkScope',
+                disabled: false,
+                margin: '0 10 0 10',
+                checked: true
+            },{
+                boxLabel: "Added",
+                name: 'showWorkScope',
+                inputValue: 'added',
+                disabled: false,
+                margin: '0 10 0 10',
+                checked: false
+
+            },{
+                boxLabel: "Removed",
+                name: 'showWorkScope',
+                inputValue: 'removed',
+                disabled: false,
+                margin: '0 10 0 10',
+                checked: false
+
+            }],
+            listeners: {
+                scope: this,
+                change: this._updateApp
+            }
+        };
+    },
+    _getOrganizeByType: function(labelWidth, boxWidth){
+        return {
+            xtype: 'radiogroup',
+            fieldLabel: 'Organize By',
+            itemId: 'selectedOrganizeBy',
+            columns: 3,
+            style: {
+                align: 'left'
+            },
+            allowBlank: false,
+            vertical: false,
+            labelWidth: labelWidth,
+            margin: '25 0 10 0',
+            padding: 5,
+            layout: 'fit',
+            labelAlign: 'right',
+            items: [{
+                boxLabel: "Project",
+                inputValue: 'Project',
+                margin: '0 10 0 10',
+                name: 'organizeBy',
+                disabled: false,
+                checked: true
+            },{
+                boxLabel: "Day",
+                inputValue: 'Day',
+                name: 'organizeBy',
+                disabled: false,
+                margin: '0 10 0 10',
+                checked: false
+
+            }],
+            listeners: {
+                scope: this,
+                change: this._updateApp
+            }
+        };
+    },
+    _loadMatchingIterations: function(timebox){
+        if (!timebox || !timebox.getRecord()){
+            //Todo add message that there is no selected iteration;
+            this.logger.log('_loadMatchingIterations no timebox selected');
+            return;
+        }
+
+        var filters = [{
+            property: 'Name',
+            value: timebox.getRecord().get('Name')
+        },{
+            property: 'StartDate',
+            value: timebox.getRecord().get('StartDate')
+        },{
+            property: 'EndDate',
+            value: timebox.getRecord().get('EndDate')
+        }];
+
+        this.logger.log('_loadScopeRevisions', filters);
+
+        var store = Ext.create('Rally.data.wsapi.Store',{
+            model: 'Iteration',
+            filters: filters,
+            context: {
+                project: this.getContext().getProject()._ref,
+                projectScopeDown: this.getContext().getProjectScopeDown(),
+                projectScopeUp: false
+            },
+            fetch: ['StartDate','Name','EndDate','RevisionHistory','Project'],
+            limit: 'Infinity'
+        });
+        store.load({
+            callback: this._loadScopeRevisions,
+            scope: this
+        });
+
+    },
+    _loadScopeRevisions: function(records, operation){
+        var promises = [];
+
+        if (!operation.wasSuccessful()){
+            this.logger.log('_loadMatchingIterations failed', operation)
+            //Todo alert the user and put a message up
+            return;
+        }
+        this.logger.log('_loadMatchingIterations', records, operation);
+        if (records.length === 0){
+            this.logger.log('_loadScopeRevisions 0 records');
+            return;
+        }
+
+        _.each(records, function(r){
+            promises.push(this._fetchHistory(r));
+        }, this);
+
+        Deft.Promise.all(promises).then({
+            success: function(revisions){
+                this.logger.log('_loadScopeRevisions success', revisions);
+                this.timeboxParser = Ext.create('Rally.technicalservices.TimeboxHistoryParser',{
+                    timeboxRecords: records,
+                    historyRecords: revisions,
+                    hoursOffset: this.getSetting('hoursOffset')
+                });
+                var formattedIDs = this.timeboxParser.getArtifactFormattedIDs();
+
+                this.logger.log('parsed histories', this.timeboxParser, formattedIDs);
+                if (formattedIDs.length > 0){
+                    this._fetchArtifactData(this.timeboxParser.getArtifactFormattedIDs()).then({
+                        success: function(artifacts){
+                            this.timeboxParser.aggregateArtifactData(artifacts);
+                            this._updateApp();
+                        },
+                        failure: function(msg){},
+                        scope: this
+                    });
+                } else {
+                    this._updateApp();
+                }
+
+            },
+            failure: function(msg){
+                this.logger.log('_loadScopeRevisions failure', msg);
+            },
+            scope: this
+        });
+    },
+    _fetchHistory: function(record){
+        var deferred = Ext.create('Deft.Deferred');
+
+        var filter = Ext.create('Rally.data.wsapi.Filter',{
+            property:"RevisionHistory",
+            value: record.get('RevisionHistory')._ref
+        });
+        this.logger.log('_fetchHistory', filter.toString());
+        var store = Ext.create('Rally.data.wsapi.Store',{
+            model:'Revision',
+            filters: filter,
+            limit: Infinity,
+            fetch: ['Description','CreationDate','User'],
+            sorters: [{property:'CreationDate',direction:'ASC'}]
+        });
+
+        store.load({
+            callback: function(records, operation){
+                if (operation.wasSuccessful()){
+                    deferred.resolve(records);
+                } else {
+                    deferred.reject(operation.error.errors.join(','));
+                }
+            }
+        });
+        return deferred;
+    },
+    _updateApp: function(){
+
+        if (this.down('rallygrid')){
+            this.down('rallygrid').destroy();
+        }
+
+        var timebox = this.getContext().getTimeboxScope().getRecord(),
+            showWorkScope = 'all', // this.down('#selectedShowWorkScope').getValue().showWorkScope,
+            organizeBy = this.down('#selectedOrganizeBy').getValue().organizeBy;
+
+        this.logger.log('_updateApp', showWorkScope, organizeBy, timebox);
+
+        var data = this.timeboxParser.getActivityData(),
+            summary = this.timeboxParser.getSummary();
+
+        this.down('#iterationStatusTemplate').update(Ext.merge(summary, timebox.getData()));
+
+        this._buildGrid(data, organizeBy);
+    },
+
+    _buildGrid: function(data, organizeBy){
+        if (organizeBy !== 'Day' && organizeBy !== 'Project'){
+            organizeBy = 'Day';
+        }
+
+        this.logger.log('_buildGrid', data, organizeBy, this._getColumnCfgs());
+        var store = Ext.create('Rally.data.custom.Store', {
+            data: data,
+            groupField: organizeBy,
+            groupDir: 'ASC',
+            pageSize: data.length
+        });
+        this.add({
+            xtype: 'rallygrid',
+            features: [{
+                ftype: 'groupingsummary',
+                groupHeaderTpl: '{name} ({rows.length})',
+                startCollapsed: true
+            }],
+            showPagingToolbar: false,
+            emptyText: '<p>No Scope Changes found.</p>',
+            store: store,
+            columnCfgs: this._getColumnCfgs()
+        });
+
+    },
+    _statusRenderer: function(value){
+        if (value === 'Added'){
+            return '<span class="added"><b>+</b></span>';
+        }
+        if (value === 'Removed'){
+            return '<span class="removed"><b>-</b></span>';
+        }
+        return value;
+    },
+    _getColumnCfgs: function(){
+        return [{
+            text: 'Status',
+            dataIndex: 'Status',
+            flex: 1,
+            renderer: this._statusRenderer
+            },{
+            text: 'ID',
+            dataIndex: 'FormattedID',
+            flex: 1,
+            renderer: function (value, metaData, record) {
+                if (record.get('_ref')){
+                    return Ext.create('Rally.ui.renderer.template.FormattedIDTemplate',{}).apply(record.data);
+                }
+                return value;
+
+            }
+        },{
+            text: 'Name',
+            dataIndex: 'Name',
+            flex: 2
+        },{
+            text: 'Project',
+            dataIndex: 'Project',
+            flex: 2
+        },{
+            text: 'Day',
+            dataIndex: 'Day',
+            flex: 1
+        },{
+            text: 'Parent',
+            dataIndex: 'Parent',
+            flex: 3,
+            renderer: function (value, metaData, record) {
+                if (record.get('Parent')){
+                    return Ext.create('Rally.ui.renderer.template.ParentTemplate').apply(record.data);
+                }
+                return '';
+
+            }
+        },{
+            text: 'Est',
+            dataIndex: 'PlanEstimate',
+            flex: 1
+        },{
+            text: 'User',
+            dataIndex: 'User',
+            flex: 1
+        }];
+    },
+    _fetchArtifactData: function(artifactFormattedIds){
+        var deferred = Ext.create('Deft.Deferred');
+
+        var chunked_filters = [], idx = -1, chunkSize = 10;
+
+        for (var i=0; i<artifactFormattedIds.length; i++){
+            if (i % chunkSize === 0){
+                idx++;
+                chunked_filters.push([]);
+            }
+            chunked_filters[idx].push({property: 'FormattedID', value: artifactFormattedIds[i] });
+        }
+
+        var promises = [];
+        _.each(chunked_filters, function(chunk){
+            promises.push(this._fetchChunk({
+                models: ['Defect', 'DefectSuite', 'UserStory','TestSet'],
+                fetch: ['FormattedID','Name','Parent','PortfolioItem','Requirement','PlanEstimate'],
+                filters: Rally.data.wsapi.Filter.or(chunk),
+                limit: 'Infinity',
+                context: { project: null }
+            }));
+        }, this);
+
+        Deft.Promise.all(promises).then({
+            success: function(results){
+                var records = _.flatten(results);
+                deferred.resolve(records);
+            },
+            failure: function(msg){
+                deferred.reject(msg);
+            },
+            scope: this
+        });
+
+
+        return deferred;
+    },
+    _export: function(){
+        var file_util = Ext.create('Rally.technicalservices.FileUtilities',{});
+
+        var csv = file_util.getCSVFromData(this, this.down('rallygrid'),this._getExportColumnCfgs());
+        file_util.saveCSVToFile(csv, 'export.csv');
+    },
+    _getExportColumnCfgs: function(){
+        return [{
+            text: 'Status',
+            dataIndex: 'Status'
+        },{
+            text: 'ID',
+            dataIndex: 'FormattedID'
+        },{
+            text: 'Name',
+            dataIndex: 'Name'
+        },{
+            text: 'Project',
+            dataIndex: 'Project'
+        },{
+            text: 'Day',
+            dataIndex: 'Day'
+        },{
+            text: 'Parent ID',
+            dataIndex: 'Parent',
+            renderer: function (value, metaData, record) {
+                if (record.get('Parent')){
+                    return record.get('FormattedID');
+                }
+                return '';
+
+            }
+        },{
+            text: 'Parent Name',
+            dataIndex: 'Parent',
+            renderer: function (value, metaData, record) {
+                if (record.get('Parent')){
+                    return record.get('Name');
+                }
+                return '';
+
+            }
+        },{
+            text: 'Est',
+            dataIndex: 'PlanEstimate',
+            flex: 1
+        },{
+            text: 'User',
+            dataIndex: 'User',
+            flex: 1
+        }];
+    },
+
+    _fetchChunk: function(config){
+        var deferred = Ext.create('Deft.Deferred');
+
+        Ext.create('Rally.data.wsapi.artifact.Store', config).load({
+            callback: function(records, operation){
+                if (operation.wasSuccessful()){
+                    deferred.resolve(records);
+                } else {
+                    deferred.reject(Ext.String.format("Error loading artifacts with filter [{0}]: {1}", config.filters.toString(), operation.error.errors.join(',')));
+                }
+
+            },
+            scope: this
+        });
+
+        return deferred;
+    },
+
+    _updateIterationStatus: function(timebox){
+        var data = timebox && timebox.getRecord() && timebox.getRecord().getData() || {};
+        this.down('#iterationStatusTemplate').update(data);
+
+    },
+    getSettingsFields: function(){
+        return [{
+            xtype: 'rallynumberfield',
+            minValue: 0,
+            name: 'hoursOffset',
+            fieldLabel: 'Ignore scope changes for this number of hours after the iteration begins:',
+            labelWidth: 400,
+            labelAlign: 'right'
+        }];
+    },
+    getOptions: function() {
+        return [
+            {
+                text: 'About...',
+                handler: this._launchInfo,
+                scope: this
+            }
+        ];
+    },
+    
+    _launchInfo: function() {
+        if ( this.about_dialog ) { this.about_dialog.destroy(); }
+        this.about_dialog = Ext.create('Rally.technicalservices.InfoLink',{});
+    },
+    
+    isExternal: function(){
+        return typeof(this.getAppId()) == 'undefined';
+    },
+    
+    //onSettingsUpdate:  Override
+    onSettingsUpdate: function (settings){
+        this.logger.log('onSettingsUpdate',settings);
+        Ext.apply(this, settings);
+        this.launch();
+    }
+});
+
+Ext.define('Rally.technicalservices.IterationStatusTemplate',{
+    extend: 'Ext.XTemplate',
+
+    constructor: function(config) {
+        var templateConfig = [
+            '<tpl if="this.isNotEmpty(values)">',
+            '<div class="iterationinfo"><b>{Name} ({[this.getDuration(values)]} Days, {[this.getStatus(values)]})</b></div>',
+            '<table class="summary"><tr>',
+            '<td width=100 border="0"></td>',
+            '<th width=100 align=right class="summary"><b>Count</b></th>',
+            '<th width=100 align=right class="summary"><b>Points</b></th>',
+            '</tr>',
+            '<tr>',
+            '<td width=100 align=right><span class="added"><b>+</b></span>&nbsp;Added</td>',
+            '<td width=100 align=right>{[this.getAddedCount(values)]}</td>',
+            '<td width=100 align=right>{[this.getAddedPoints(values)]}',
+            '</td>',
+            '</tr><tr>',
+            '<td width=100 align=right><span class="removed"><b>-</b></span>&nbsp;Removed</td>',
+            '<td width=100 align=right>{[this.getRemovedCount(values)]}</td>',
+            '<td width=100 align=right>{[this.getRemovedPoints(values)]}</td>',
+            '</tr><tr>',
+            '<th width=100 align=right class="net summary"><b>Net</b></th>',
+            '<td width=100 align=right><b>{[this.getNetCount(values)]}</b></td>',
+            '<td width=100 align=right><b>{[this.getNetPoints(values)]}</b></td>',
+            '</tr></table>',
+            '</tpl>',
+            {
+                isNotEmpty: function(recordData){
+                    if (recordData && recordData.Name && recordData.EndDate && recordData.StartDate){
+                        return true;
+                    }
+
+                    return false;
+                },
+                getStatus: function(recordData) {
+                    var today = new Date();
+
+                    if (recordData.EndDate < today){
+                        return "Done";
+                    }
+
+                    if (recordData.StartDate > today){
+                        return "Not Started";
+                    }
+
+                    return this.getRemainingDays(recordData) + " Days remaining";
+                },
+                getRemainingDays: function(recordData){
+                    return Rally.util.DateTime.getDifference(recordData.EndDate, new Date(), 'day');
+                },
+                getDuration: function(recordData){
+                    return Rally.util.DateTime.getDifference(recordData.EndDate, recordData.StartDate, 'day');
+                },
+                getRemovedCount: function(recordData){
+                    return recordData.Removed.Count;
+                },
+                getRemovedPoints: function(recordData){
+                    return recordData.Removed.Points.toFixed(1);
+                },
+                getAddedCount: function(recordData){
+                    return recordData.Added.Count;
+                },
+                getAddedPoints: function(recordData){
+                    return recordData.Added.Points.toFixed(1);
+                },
+                getNetCount: function(recordData){
+                    var net = recordData.Added.Count - recordData.Removed.Count;
+                    if (net > 0){
+                        return this.getAddedSpan(net);
+                    }
+                    if (net === 0){
+                        return '0';
+                    }
+                    return this.getRemovedSpan(net);
+
+                },
+                getNetPoints: function(recordData){
+                    var net = Number(recordData.Added.Points - recordData.Removed.Points).toFixed(1);
+                    if (net > 0){
+                        return this.getAddedSpan(net);
+                    }
+                    if (net === 0){
+                        return '0';
+                    }
+                    return this.getRemovedSpan(net);
+                },
+                getAddedSpan: function(additionalText){
+                    return Ext.String.format('<span class="added"><b>+</b></span>&nbsp;{0}',additionalText || '');
+                },
+                getRemovedSpan: function(additionalText){
+                    return Ext.String.format('<span class="removed"><b>-</b></span>&nbsp;{0}',additionalText || '');
+                }
+            },
+            config
+        ];
+
+        return this.callParent(templateConfig);
+    }
+});
+
+Ext.define('Rally.technicalservices.TimeboxHistoryParser',{
+    extend: 'Ext.Base',
+
+    mixins: {
+        observable: 'Ext.util.Observable'
+    },
+
+    historyRecords: undefined,
+    timeboxRecords: undefined,
+    activityData: undefined,
+
+    constructor: function (config) {
+        this.mixins.observable.constructor.call(this, config);
+
+        this.historyRecords = (config && config.historyRecords) || [];
+        this.timeboxRecords = (config && config.timeboxRecords) || [];
+        this.activityData = [];
+
+        var hoursOffset = config.hoursOffset || 0;
+
+        this._parseHistories(this.timeboxRecords, this.historyRecords, hoursOffset);
+    },
+    _parseHistories: function(timeboxRecords, historyRecords, hoursOffset){
+        var activityData = [];
+
+        for (var i = 0; i < timeboxRecords.length; i++) {
+            var revisions = historyRecords[i],
+                record = timeboxRecords[i];
+
+            _.each(revisions, function (rev) {
+
+                var dataDate = Rally.util.DateTime.fromIsoString(rev.get('CreationDate')),
+                    endDate = Rally.util.DateTime.fromIsoString(record.get('EndDate')),
+                    startDate = Rally.util.DateTime.fromIsoString(record.get('StartDate')),
+                    description = rev.get('Description');
+
+                if (hoursOffset > 0){
+                    var startHours = startDate.getHours()
+                    startDate.setHours(startHours + hoursOffset);
+                }
+                //endDate.setHours(23, 59, 59, 0);
+
+                if (/Scheduled|Unscheduled/.test(description) &&
+                    dataDate >= startDate && dataDate <= endDate) {
+
+                    var splitRevision = description.split(',');
+                    for (var num = 0; num < splitRevision.length; num++) {
+
+                        var action = this._getAction(splitRevision[num]);
+                        if (action) {
+
+                            var formattedId = this._getFormattedID(splitRevision[num]);
+
+                            if (formattedId !== null) {
+                                var wasDeleted = this._getWasDeleted(description);
+
+                                activityData.push({
+                                    Status: action,
+                                    FormattedID: formattedId,
+                                    User: rev.get('User')._refObjectName,
+                                    CreationDate: dataDate,
+                                    Project: record.get('Project').Name,
+                                    isDeleted: wasDeleted,
+                                    Name: null,
+                                    Day: Rally.util.DateTime.formatWithDefault(dataDate),
+                                    Parent: null,
+                                    PlanEstimate: 0
+                                });
+                            }
+                        }
+                    }
+                }
+            }, this);
+        }
+        this.activityData = activityData;
+    },
+    getArtifactFormattedIDs: function(){
+        if (this.activityData.length === 0){
+            return [];
+        }
+        return _.pluck(this.activityData, 'FormattedID');
+    },
+    getActivityData: function(){
+        return this.activityData || [];
+    },
+    aggregateArtifactData: function(artifacts){
+
+        var artifactHash = {};
+        _.each(artifacts, function(a){
+            artifactHash[a.get('FormattedID')] = a;
+        });
+
+        _.each(this.activityData, function(obj){
+            obj.isDeleted = false;
+            var artifact = artifactHash[obj.FormattedID] || null;
+            if (artifact){
+                obj._ref = artifact.get('_ref');
+                obj.Name = artifact.get('Name');
+                obj.Parent = artifact.get('Parent') || artifact.get('PortfolioItem') || artifact.get('Requirement') || null;
+                obj.PlanEstimate = artifact.get('PlanEstimate') || 0;
+
+            } else {
+                obj.isDeleted = true;
+                obj.Name = "<i>Deleted</i>"
+            }
+        });
+    },
+    getSummary: function(){
+        var countAdded = 0,
+            countRemoved = 0,
+            pointsAdded = 0,
+            pointsRemoved = 0,
+            hash = {
+                Added: {
+                    Count: 0,
+                    Points: 0
+                },
+                Removed: {
+                    Count: 0,
+                    Points: 0
+                }
+            };
+
+        _.each(this.activityData, function(obj){
+            hash[obj.Status].Count++;
+            hash[obj.Status].Points += obj.PlanEstimate;
+
+            if (obj.Status === 'Added'){
+                countAdded++;
+                pointsAdded += obj.PlanEstimate || 0;
+            }
+            if (obj.Status === 'Removed'){
+                countRemoved++;
+                pointsRemoved += obj.PlanEstimate || 0;
+            }
+
+        });
+
+        var data = [];
+        data.push({Description: 'Added', Count: countAdded, Points: pointsAdded});
+        data.push({Description: 'Removed', Count: countRemoved, Points: pointsRemoved});
+        data.push({Description: 'Net', Count: countAdded - countRemoved, Points: pointsAdded - pointsRemoved});
+
+        return hash;
+    },
+    _getPrefix: function(formattedID){
+        return formattedID.replace(/[0-9]/g, "");
+    },
+    _getWasDeleted: function(description){
+        if (/Unscheduled/.test(description) && /\(Moved to Recycle Bin\)]$/.test(description)) {
+            return true;
+        }
+        return false;
+    },
+    _getAction: function (description) {
+        if (/Unscheduled/.test(description)) {
+            return "Removed";
+        }
+
+        if (/Scheduled/.test(description)) {
+            return "Added";
+        }
+        return null;
+    },
+    _getFormattedID: function(description){
+        var artifactName = description.split("[");
+
+        if (typeof artifactName[1] === 'undefined') {
+            artifactName = description.split(":");
+        }
+
+        if (typeof artifactName[1] === 'undefined') {
+            return null;
+        }
+
+        var formattedID = artifactName[1].split(":");
+        formattedID = formattedID[0].replace(/^\s*|\s*$/g, '');
+
+        return formattedID;
+    },
+
+
+});
+            
+               Rally.launchApp('iteration-scope-change-by-project', {
+                   name: 'Iteration Scope Change'
+               });
+        });
+    </script>
+    
+    <style type="text/css">
+
+.app {
+}
+.tsinfolink {
+    position:absolute;
+    right:0px;
+    width: 14px;
+    height: 14px;
+    border-radius: 7px;
+    text-align: center;
+    color: white;
+    background: #C0C0C0;
+    border-style: solid;
+    border-width: 1px;
+    margin-top: 25px;
+    margin-right: 5px;
+    cursor: pointer;
+}
+
+.iterationinfo{
+    color: #222222;
+    font-family: ProximaNovaSemiBold, Helvetica, Arial;
+    font-size: 14px;
+    padding: 5px;
+}
+
+.added {
+    color: green;
+    font-family: ProximaNovaSemiBold, Helvetica, Arial;
+    font-size: 14px;
+    padding-top: 5px;
+    font-weight: bold;
+}
+.removed {
+    color: red;
+    font-family: ProximaNovaSemiBold, Helvetica, Arial;
+    font-size: 14px;
+    padding-top: 5px;
+    font-weight: bold;
+}
+.net {
+    color: #222222;
+    font-family: ProximaNovaSemiBold, Helvetica, Arial;
+    padding-top: 5px;
+    font-weight: bold;
+}
+table.summary {
+    border-style: solid;
+    border-width: 1px;
+    font-family: ProximaNovaSemiBold, Helvetica, Arial;
+    font-size: 11px;
+}
+th.summary {
+    text-transform: uppercase;
+}
+
+.x-grid-empty {
+  text-align: center;
+    color: #666666;
+    font-family: ProximaNovaSemiBold, Helvetica, Arial;
+    font-size: 14px;
+    padding: 5px;
+}
+    </style>
+
+</head>
+<body></body>
+</html>
